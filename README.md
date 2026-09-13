@@ -4,9 +4,17 @@ Zhishu is a self-hosted learning workspace for branching a discussion from an ex
 
 [中文文档](README.zh-CN.md)
 
+## Learning Workflow
+
+- **Start and organize discussions:** create a topic, search titles or tags, and use its “More” menu to rename, favorite or delete it. Branch deletion offers undo before the next workspace change, for up to ten minutes; deleting an entire session's mainline requires a separate, irreversible confirmation.
+- **Explore a passage:** select text in a message to show the nearby “Expand discussion” and “Copy” toolbar. Preview the passage, choose background up to the selection endpoint, and enter a question. Whole-message branching uses the same preview before creating a discussion.
+- **Connect and return:** explicitly choose messages or ranges from another topic to add reference snapshots, then return to the original passage whenever needed. Topic and message lists are loaded in pages rather than as a full workspace.
+
 ## Quick Start
 
 Requires Node.js 22.12+ (or 24 LTS), npm, and Python 3.12+. SQLite is embedded; Docker and an external database are not required.
+
+Run the commands below from the repository root. They use the Windows Python launcher `py`; on macOS/Linux, substitute your Python 3.12+ interpreter, usually `python3`.
 
 ```sh
 npm install
@@ -27,11 +35,16 @@ macOS, Linux, or another POSIX shell:
 cp .env.example .env
 ```
 
-Then initialize the database, start FastAPI in one terminal, and start Vite in another:
+Initialize the database and start FastAPI in the first terminal:
 
 ```sh
 py -m alembic -c backend/alembic.ini upgrade head
 py -m uvicorn app.main:app --app-dir backend --reload --port 8000
+```
+
+Keep it running and start Vite in a second terminal:
+
+```sh
 npm run dev:web
 ```
 
@@ -51,13 +64,15 @@ Set `APP_ENV=production`, a persistent `DATABASE_URL`, and `DATA_ENCRYPTION_KEY`
 
 Set `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, `AI_PROVIDER` (`openai`, `anthropic`, or `gemini`), and optionally `AI_TIMEOUT_MS` in `.env`, or configure the protocol, output token limit and temperature in the Settings & Data panel. All three text protocols support incremental SSE. DeepSeek, Qwen and OpenRouter are OpenAI-compatible URL presets, not separately verified integrations. Tests use protocol-specific local fixtures; no real provider account has been verified. Session keys are submitted only to the same-origin API and excluded from read APIs and exports.
 
+In Settings & Data, select a provider preset or enter a custom endpoint, then fill in the model name and API key. Preset model names are examples, not a live availability list. **Save and test** saves the current form before making a short model request and distinguishes save failures from connection failures. Changing the protocol or endpoint requires a key for that connection. Unsaved edits are protected when closing the panel; clearing personal configuration requires confirmation and restores the server fallback if one exists.
+
 Settings also offers disk-staged NDJSON history import and streaming download (1 MiB per record, 2 GiB file limit). Compatibility JSON requests are limited to 8 MiB. Startup applies Alembic upgrades automatically; old workspace JSON is retained as a migration-time backup. Read [architecture and current scaling limits](docs/architecture.md) before migrating a large workspace. Private model hosts require the explicit server setting `AI_ALLOW_PRIVATE_HOSTS=true`; production still requires HTTPS.
 
 For production session credentials, set `DATA_ENCRYPTION_KEY` to a base64-encoded 32-byte key. Generate one with `npm run keys:generate`. In development, an unset key causes the API to generate an ephemeral process key; saved session credentials deliberately cannot be read after a restart. `AI_ALLOWED_HOSTS` optionally restricts user-configured provider hostnames.
 
 ## Windows Desktop
 
-On Windows, running `desktop\build.ps1` produces two distributable forms, both in `desktop\dist\`:
+On Windows, `desktop\build.ps1` builds the portable package and, with Inno Setup 6.3+ available, the installer. Successful outputs are in `desktop\dist\`:
 
 - **`Zhishu-Setup-windows-x64.exe`** (recommended) — users double-click to install; the WebView2 Runtime and shortcuts are handled automatically, and it installs per user without administrator rights
 - **`Zhishu-windows-x64.zip`** — portable; unzip and run `Zhishu\Zhishu.exe`, keeping the whole `_internal` folder alongside it
@@ -74,6 +89,8 @@ npm run test:browser
 ```
 
 The browser smoke test builds the client, starts FastAPI with a temporary SQLite database, and uses Chrome through the installed `playwright-core`. Install Chrome, or set `CHROME_PATH` to a Chrome/Chromium executable. It writes `test-results/browser-smoke.png`.
+
+The browser suite also covers settings failure recovery, unsaved edits, topic operations, mouse/keyboard selection and narrow layouts; UX screenshots are saved as `test-results/ux-*.png`. Narrow-browser checks do not replace physical mobile-device testing. The npm test wrappers use `py`; where it is unavailable, run `python3 -m pytest backend/tests -q` and `python3 backend/tests/browser_smoke.py` directly.
 
 ## Documentation
 
