@@ -13,11 +13,12 @@ export function useWorkspace(controller: WorkspaceController) {
 export function useTopics(cursor: number, search: string, revision: number) {
   const [page, setPage] = useState<Page<TopicMeta>>({ items: [], nextCursor: null });
   const [error, setError] = useState('');
-  useEffect(() => { let live = true; setPage({ items: [], nextCursor: null });
-    void api.topics(cursor, search).then(p => { if (live) { setPage(p); setError(''); } }).catch(e => { if (live) setError(e.message); });
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { let live = true; setLoading(true); setError(''); setPage({ items: [], nextCursor: null });
+    void api.topics(cursor, search).then(p => { if (live) { setPage(p); setError(''); } }).catch(e => { if (live) setError(e.message); }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [cursor, search, revision]);
-  return { page, error };
+  return { page, error, loading };
 }
 
 export function useEntries(app: WorkspaceController, id: string, cursor: number, before = '') {

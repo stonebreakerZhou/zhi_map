@@ -2,6 +2,7 @@ import { chromium } from 'playwright-core';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { verifyUX } from './browser_ux.mjs';
 
 const url = process.argv[2];
 const chrome = process.env.CHROME_PATH ?? [
@@ -11,6 +12,10 @@ const chrome = process.env.CHROME_PATH ?? [
 if (!url || !chrome || !existsSync(chrome)) throw new Error('Set CHROME_PATH to a Chrome or Chromium executable.');
 
 const browser = await chromium.launch({ executablePath: chrome, headless: true });
+if (process.env.UX_ONLY) {
+  try { await verifyUX(browser, url); } finally { await browser.close(); }
+  process.exit(0);
+}
 try {
   const page = await browser.newPage();
   const errors = [];
@@ -24,6 +29,7 @@ try {
 
   await page.locator('[data-sample]').click();
   const assistant = page.locator('article.message.assistant').first();
+  await assistant.locator('[data-source-start]').filter({ hasText: '平方项总是非负' }).scrollIntoViewIfNeeded();
   await assistant.locator('[data-source-start]').filter({ hasText: '平方项总是非负' }).evaluate((element) => {
     const text = element.textContent ?? '';
     const start = text.indexOf('平方项总是非负');
@@ -157,8 +163,8 @@ try {
   await page.locator('#draft').getAttribute('id');
   await page.waitForFunction(() => document.querySelector('#draft')?.value === 'preserved draft');
   await page.locator('#manage-button').click();
-  await page.getByLabel('确认删除（独立子分支保留）').check();
   await page.locator('[data-delete-branch]').click();
+  await page.getByRole('button', { name: '确认删除主题', exact: true }).click();
   await page.locator('#undo').click();
   await page.locator('#chat-header h1').getByText('Large 0', { exact: true }).waitFor();
   await page.locator('#settings-button').click();
@@ -175,6 +181,7 @@ try {
   console.log(`Browser: selection/expand, exact source return, partial reference, 3 protocols, stream/cancel/retry/reload, failed draft flush, token undo, 100 topics/10000 entries passed. snapshot_requests=0 max_normal_response_bytes=${Math.max(...sizes)} cache_pages<=8 cache_entries<=320 DOM_rows<=40.`);
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: join('test-results', 'browser-smoke.png'), fullPage: true });
+  await verifyUX(browser, url);
 } finally {
   await browser.close();
 }

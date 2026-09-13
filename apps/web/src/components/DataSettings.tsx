@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { WorkspaceController } from '../controller.js';
 import { api } from '../api.js';
 
-export function DataSettings({ app }: { app: WorkspaceController }) {
+export function DataSettings({ app, busyChanged }: { app: WorkspaceController; busyChanged?: (busy: boolean) => void }) {
   const [status, setStatus] = useState('单记录 ≤ 1 MiB，总文件 ≤ 2 GiB；导入成功前原工作区保持完整。'), [busy, setBusy] = useState(false);
+  useEffect(() => { busyChanged?.(busy); }, [busy, busyChanged]);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
   const upload = async (file?: File, legacy = false) => {

@@ -3,7 +3,7 @@ import asyncio
 import json
 
 from fastapi import Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from app.main import app
 
 
@@ -21,6 +21,9 @@ async def provider(request: Request):
     else:
         assert request.headers["authorization"] == "Bearer test-secret"
         family = "openai"
+    if not body.get('stream') and family == 'openai':
+        assert body['model'] == 'current-form-model'
+        return JSONResponse({'choices': [{'message': {'content': 'OK'}}]})
     async def stream():
         for i in range(30):
             if family == "anthropic":

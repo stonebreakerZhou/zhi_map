@@ -33,6 +33,7 @@ export class WorkspaceController {
   page: Page<Entry> = { items: [], nextCursor: null, cursor: -1 };
   notice = '';
   undoToken?: string;
+  undoBusy = false;
   readonly cache = new QueryCache(() => this.changed());
   private dirty = new Map<string, string>();
   private runs = new Map<string, { abort: AbortController; id?: string; text: string }>();
@@ -40,13 +41,23 @@ export class WorkspaceController {
   private version = 0;
   private queue: Promise<unknown> = Promise.resolve();
   private timer?: number;
+  private undoTimer?: number;
   private frame = 0;
   private generation = 0;
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getVersion = () => this.version;
   changed = () => { this.version++; this.listeners.forEach(fn => fn()); };
   report = (error: unknown) => { this.notice = error instanceof Error ? error.message : String(error); this.changed(); };
-  private accept(result: Compact) { if (result.revision > this.revision) this.undoToken = undefined; this.revision = Math.max(this.revision, result.revision); for (const id of result.affectedIds ?? []) this.cache.clear(id); if (result.undoToken) this.undoToken = result.undoToken; }
+  private accept(result: Compact) {
+    if (result.revision > this.revision) { this.undoToken = undefined; clearTimeout(this.undoTimer); }
+    this.revision = Math.max(this.revision, result.revision);
+    for (const id of result.affectedIds ?? []) this.cache.clear(id);
+    if (result.undoToken) {
+      this.undoToken = result.undoToken;
+      clearTimeout(this.undoTimer);
+      this.undoTimer = window.setTimeout(() => { this.undoToken = undefined; this.changed(); }, 600000);
+    }
+  }
   async load() {
     const view = await api.view(); this.accept(view);
     this.topicRevision++;
@@ -74,6 +85,7 @@ export class WorkspaceController {
         const result = await api.action({ type: 'draft', branchId, text, revision: this.revision }); this.accept(result);
         if (this.dirty.get(branchId) === text) this.dirty.delete(branchId);
       }
+      this.changed();
     });
   }
   async action(action: Action, anchor = '') {
@@ -86,7 +98,12 @@ export class WorkspaceController {
       this.changed(); return result;
     });
   }
-  async undo() { await this.flush(); if (!this.undoToken) return; const result = await api.undo(this.undoToken, this.revision); this.undoToken = undefined; this.accept(result); this.topicRevision++; if (result.active) await this.open(result.active); }
+  async undo() {
+    if (this.undoBusy) return;
+    this.undoBusy = true; this.changed();
+    try { await this.flush(); await this.serial(async () => { if (!this.undoToken) return; const result = await api.undo(this.undoToken, this.revision); this.undoToken = undefined; this.accept(result); this.topicRevision++; if (result.active) await this.open(result.active); }); }
+    finally { this.undoBusy = false; this.changed(); }
+  }
   running(id = this.branch?.id) { return Boolean(id && this.runs.has(id)); }
   partial(id = this.branch?.id) { return id ? this.runs.get(id)?.text ?? '' : ''; }
   async ask(id = this.branch?.id) {
@@ -112,5 +129,5 @@ export class WorkspaceController {
     finally { if (this.runs.get(id) === run) this.runs.delete(id); this.changed(); }
   }
   cancel(id = this.branch?.id) { if (!id) return; const run = this.runs.get(id); if (run?.id) void fetch('/api/ai/chat/cancel', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ branchId: id, runId: run.id }) }).catch(this.report); run?.abort.abort(); }
-  dispose() { clearTimeout(this.timer); cancelAnimationFrame(this.frame); for (const id of this.runs.keys()) this.cancel(id); this.generation++; this.listeners.clear(); this.cache.clear(); }
+  dispose() { clearTimeout(this.timer); clearTimeout(this.undoTimer); cancelAnimationFrame(this.frame); for (const id of this.runs.keys()) this.cancel(id); this.generation++; this.listeners.clear(); this.cache.clear(); }
 }

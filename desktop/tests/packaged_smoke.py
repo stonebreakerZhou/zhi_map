@@ -183,12 +183,14 @@ def main():
                     page.locator("#chat-header h1").filter(has_text="新的学习问题").wait_for()
                     # Use the visible settings form, not a synthetic API save.
                     page.locator("#settings-button").click()
-                    page.locator("#ai-base-url").fill("https://api.openai.com/v1")
+                    # Persistence-only: a public IP literal avoids live provider DNS.
+                    # No connection test or generation request is sent to this address.
+                    page.locator("#ai-base-url").fill("https://93.184.216.34/v1")
                     page.locator("#ai-model").fill("desktop-persistence-test")
                     page.locator("#ai-key").fill("sk-desktop-isolated-test-not-a-real-key")
                     with page.expect_response(lambda r: r.url.endswith('/api/ai/config') and r.request.method == 'POST') as saved:
                         page.locator("#save-ai-config").click()
-                    assert saved.value.status == 200
+                    assert saved.value.status == 200, saved.value.text()
                     page.wait_for_load_state("networkidle")
                     page.locator("#close-modal").click()
                     with page.expect_response(lambda r: '/api/workspace/actions' in r.url and r.request.method == 'POST' and r.request.post_data_json.get('type') == 'draft') as draft_saved:
@@ -229,6 +231,7 @@ def main():
                     assert db.execute("SELECT count(*) FROM users").fetchone()[0] == 1
                     assert db.execute("SELECT count(*) FROM auth_sessions").fetchone()[0] == 1
                 page.screenshot(path=str(directory / f"webview-{cycle}.png"))
+                assert page.locator('#tree').evaluate("el => el.clientHeight >= el.querySelector('.topic-row').getBoundingClientRect().height"), "First topic is clipped at native DPI"
                 hwnd = window_for(process.pid)
                 assert hwnd, "No visible native GUI window"
                 modules = native_modules(process.pid)

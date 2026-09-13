@@ -37,7 +37,7 @@ def main() -> None:
     npm = shutil.which("npm.cmd") or shutil.which("npm")
     if not npm:
         raise RuntimeError("npm is required to build the web client")
-    subprocess.run([npm, "run", "build:web"], cwd=ROOT, check=True)
+    subprocess.run([npm, "run", "build:web", "--", "--logLevel", "warn"], cwd=ROOT, check=True)
     if not shutil.which("node"):
         raise RuntimeError("Node.js is required for the Playwright browser driver")
     port = free_port()
@@ -52,7 +52,7 @@ def main() -> None:
             "AI_MODEL": "",
         }
         server = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "tests.mock_app:app", "--host", "127.0.0.1", "--port", str(port)],
+            [sys.executable, "-m", "uvicorn", "tests.mock_app:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
             cwd=BACKEND,
             env=environment,
         )
