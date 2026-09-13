@@ -35,14 +35,24 @@ def private_host(host):
 
 
 def valid_url(value):
-    parsed = urlparse(value)
+    if value != value.strip():
+        error(400, "模型地址不能包含首尾空白。")
+    try:
+        parsed = urlparse(value)
+        parsed.port  # Validate malformed and out-of-range ports before provider I/O.
+    except ValueError:
+        error(400, "模型地址格式或端口无效。")
     if (
         parsed.scheme not in ("http", "https")
         or not parsed.netloc
         or parsed.username
         or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or not parsed.hostname
+        or any(c.isspace() for c in value)
     ):
-        error(400, "模型地址必须是不含凭据的绝对 HTTP(S) URL。")
+        error(400, "模型地址必须是不含凭据、查询参数或片段的绝对 HTTP(S) URL。")
     if settings.production() and parsed.scheme != "https":
         error(400, "生产环境仅允许 HTTPS 模型地址。")
     allowed = {
@@ -99,6 +109,10 @@ def save_config(db, user_id, input):
     if not key:
         error(503, "生产环境未配置 DATA_ENCRYPTION_KEY，无法保存模型密钥。")
     prior = db.get(UserAiConfig, user_id)
+    if not input.model.strip() or (input.apiKey and not input.apiKey.strip()):
+        error(400, "模型名称和 API key 不能只有空白。")
+    if prior and not input.apiKey and (input.provider != prior.provider or input.baseUrl.rstrip('/') != prior.base_url.rstrip('/')):
+        error(400, "切换协议或模型地址时必须提供该连接的 API key。")
     if not input.apiKey and not prior:
         error(400, "首次保存模型配置时必须提供 API key。")
     version = (prior.version if prior else 0) + 1

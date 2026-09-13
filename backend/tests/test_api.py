@@ -41,3 +41,21 @@ def test_paged_routes_compact_defaults_owner_and_cursor_validation():
             assert client.get(f'/api/branches/{bid}/entries?{query}').status_code == 400
         assert client.get(f'/api/branches/{bid}/entries?anchor=missing').status_code == 404
         assert client.get('/api/topics?search=paged').json()['items'][0]['title'] == 'paged'
+
+
+def test_model_form_validation_and_connection_key_scope(monkeypatch):
+    # This tests form/key scope, not live provider DNS availability.
+    import socket
+    monkeypatch.setattr('app.services.socket.getaddrinfo', lambda host, port: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 443))
+    ])
+    with TestClient(app) as client:
+        body = dict(baseUrl='https://api.openai.com/v1', model='model', apiKey='secret', provider='openai')
+        for invalid in [dict(model='  '), dict(apiKey='  '), dict(baseUrl='https://user:pass@example.com'), dict(baseUrl='https://api.openai.com/v1?q=secret'), dict(maxTokens=None), dict(maxTokens=True), dict(timeoutMs=1.5)]:
+            assert client.post('/api/ai/config', json=body | invalid).status_code == 400
+        assert client.post('/api/ai/config', json=body).status_code == 200
+        assert client.post('/api/ai/config', json=body | dict(apiKey='', model='other')).status_code == 200
+        for change in [dict(provider='anthropic'), dict(baseUrl='https://api.anthropic.com')]:
+            assert client.post('/api/ai/config', json=body | dict(apiKey='') | change).status_code == 400
+        public = client.get('/api/ai/config').json()
+        assert public['model'] == 'other' and 'secret' not in str(public)

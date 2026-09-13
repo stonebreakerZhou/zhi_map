@@ -27,9 +27,9 @@ class ConfigInput(BaseModel):
     baseUrl: str = Field(max_length=2048)
     model: str = Field(min_length=1, max_length=200)
     apiKey: str = Field(max_length=4096)
-    timeoutMs: int | None = Field(default=None, ge=100, le=600000)
+    timeoutMs: StrictInt | None = Field(default=None, ge=100, le=600000)
     provider: Literal["openai", "anthropic", "gemini"] = "openai"
-    maxTokens: int = Field(default=4096, ge=1, le=65536)
+    maxTokens: StrictInt = Field(default=4096, ge=1, le=65536)
     temperature: float | None = Field(default=None, ge=0, le=1)
 
 
