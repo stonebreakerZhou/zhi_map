@@ -18,6 +18,14 @@ Run `npm run dev:web` from the repository root and open `http://127.0.0.1:5173`.
 
 The client lets a learner create and organize topics, send prompts, expand an exact message selection into a branch, add or remove reference snapshots, choose history references when prompted, manage titles and tags, restore a recent deletion, and export or import a workspace. Settings can configure or clear the current session's model provider.
 
+Model settings offer protocol-aware brand presets (model names are examples, not fetched availability), custom endpoints, key visibility for the current input only, load retry, and unsaved-change protection. **Save and test** persists the current form before testing and reports save failures separately from connection failures. Changing a saved connection's protocol or endpoint requires a new key; clearing personal settings requires confirmation and reloads the environment fallback status.
+
+New-topic clicks are guarded and reuse the current untouched empty topic. Each topic's “more” action captures that topic's ID for rename, tags, favorite and deletion. Branch deletion can be undone only before the next workspace mutation (including draft persistence), for at most ten minutes; session-mainline deletion has a separate irreversible confirmation.
+
+The selection toolbar follows the browser range, flips below when space above is insufficient, clamps to the viewport, and hides when the range leaves the reading viewport. Pointer and keyboard selection share UTF-16 source mapping. Copy reports actual clipboard success/failure. Whole-message branching also opens a prompt preview before creating anything. Native mobile selection handles/menus remain browser-controlled.
+
+`npm run test:browser` exercises real Chrome pointer/keyboard input, desktop (1440×900) and narrow (390×844) layouts, provider failure recovery, destructive-action guards, and the bounded-history regression. Screenshots are written to `test-results/ux-*.png`.
+
 ## Data and API Dependency
 
 The client owns bounded pages, metadata, drafts and run state. It does not persist learning data, session credentials, or authoritative revisions in browser storage. Branch-delete undo keeps only an opaque token in memory; the server stores one bounded tombstone per owner for 10 minutes. Session-mainline deletion retains independent children and has no undo. Every workspace mutation, transfer, model setting and model request depends on FastAPI.
