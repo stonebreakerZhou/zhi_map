@@ -1,0 +1,29 @@
+# ===== MindFlow 核心依赖 =====
+# GUI
+PySide6>=6.5
+
+# 数据存储
+SQLAlchemy>=2.0
+
+# AI 搜索
+duckduckgo-search>=4.4
+wikipedia>=1.4
+requests>=2.31
+# ⭐ HTTP 客户端（zhishu_http_chat_backend 调 zhi_map FastAPI 用）
+httpx>=0.25
+
+# 打包
+pyinstaller>=6.0
+
+# 报告生成（Word + PPT）
+python-docx>=1.0
+python-pptx>=0.6.21
+
+# 图像处理
+Pillow>=10.0
+
+# 测试
+pytest>=7.0
+
+# Markdown 渲染（笔记编辑器预览 + HTML 导出）
+markdown>=3.5

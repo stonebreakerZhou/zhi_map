@@ -1,0 +1,42 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+
+# ===== 虚拟环境 =====
+.venv/
+venv/
+env/
+ENV/
+
+# ===== PyInstaller 打包产物 =====
+build/
+dist/
+*.spec
+*.exe
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ===== 项目数据 =====
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+logs/
+*.log
+
+# ===== 不要跟踪同学的项目 =====
+zhi_map-main/
+
+# ===== Claude Code =====
+.claude/settings.local.json
+.claude/projects/
