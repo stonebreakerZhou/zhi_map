@@ -1,6 +1,7 @@
 import importlib.util
 import sqlite3
 import sys
+import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -10,6 +11,13 @@ import pytest
 SPEC = importlib.util.spec_from_file_location("zhishu_launcher", Path(__file__).parents[1] / "launcher.py")
 launcher = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(launcher)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="需要真实 Windows Shell")
+def test_native_app_identity():
+    # 在独立进程中向 Windows 注册并读回，避免污染 pytest 进程的任务栏身份。
+    script = "from desktop.launcher import configure_app_identity, APP_USER_MODEL_ID; from win32com.shell import shell; configure_app_identity(); assert shell.GetCurrentProcessExplicitAppUserModelID() == APP_USER_MODEL_ID"
+    subprocess.run([sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[2], check=True)
 
 
 @pytest.fixture

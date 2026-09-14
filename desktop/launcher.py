@@ -18,6 +18,7 @@ from urllib.request import urlopen
 
 
 APP_NAME = "Zhishu"
+APP_USER_MODEL_ID = "Zhishu.Desktop"
 KEY_FILE = "master-key.dpapi"
 
 
@@ -180,6 +181,12 @@ def run_server(port: int):
     return server, thread
 
 
+def configure_app_identity() -> None:
+    # 与安装器快捷方式保持一致，避免任务栏沿用宿主或旧 EXE 的分组图标。
+    from win32com.shell import shell
+    shell.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
+
+
 def main() -> int:
     if sys.platform != "win32":
         show_error("知树桌面版仅支持 Windows。请使用 Windows 10 或 Windows 11 运行 Zhishu.exe。")
@@ -188,6 +195,7 @@ def main() -> int:
     logger = logging.getLogger(APP_NAME)
     server = thread = None
     try:
+        configure_app_identity()
         directory = app_directory()
         logger = configure_logging(directory)
         root = package_root()
@@ -220,7 +228,7 @@ def main() -> int:
             webview.settings["REMOTE_DEBUGGING_PORT"] = int(debug_port)
         window = webview.create_window("知树", f"http://127.0.0.1:{port}", min_size=(900, 600))
         window.events.loaded += lambda: logger.info("WebView page loaded build=%s", build.get("build_id"))
-        webview.start(gui="edgechromium", private_mode=False, storage_path=str(directory / "browser-profile"))
+        webview.start(gui="edgechromium", private_mode=False, storage_path=str(directory / "browser-profile"), icon=str(root / "desktop" / "zhishu.ico"))
         logger.info("Desktop window closed")
         return 0
     except Exception as exc:

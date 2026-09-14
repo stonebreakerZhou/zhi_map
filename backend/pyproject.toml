@@ -6,7 +6,7 @@ dependencies = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "pydantic>=2.9", "p
 
 [project.optional-dependencies]
 test = ["pytest>=8", "ruff>=0.11"]
-desktop = ["pywebview>=6.2", "pyinstaller>=6.11", "pywin32>=306; sys_platform == 'win32'"]
+desktop = ["pywebview>=6.2", "pyinstaller>=6.11", "pywin32>=306; sys_platform == 'win32'", "resvg-py>=0.3,<0.6"]
 desktop-test = ["playwright>=1.55", "Pillow>=11", "pywin32>=306; sys_platform == 'win32'"]
 
 [tool.pytest.ini_options]

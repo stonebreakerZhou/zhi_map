@@ -48,11 +48,10 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=知树
-UninstallDisplayIcon={app}\Zhishu.exe
+UninstallDisplayIcon={app}\_internal\desktop\zhishu.ico
 CloseApplications=yes
 RestartApplications=no
-; 放一个 zhishu.ico 到 desktop\ 后取消下面一行的注释，即可同时用作安装包和快捷方式图标。
-; SetupIconFile=zhishu.ico
+SetupIconFile=zhishu.ico
 
 [Languages]
 Name: "{#LANG_NAME}"; MessagesFile: "{#LANG_FILE}"
@@ -68,9 +67,9 @@ Source: "{#WEBVIEW2_SETUP}"; DestDir: "{tmp}"; Flags: dontcopy
 #endif
 
 [Icons]
-Name: "{autoprograms}\知树\知树"; Filename: "{app}\Zhishu.exe"
-Name: "{autoprograms}\知树\卸载知树"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\知树"; Filename: "{app}\Zhishu.exe"; Tasks: desktopicon
+Name: "{autoprograms}\知树\知树"; Filename: "{app}\Zhishu.exe"; IconFilename: "{app}\_internal\desktop\zhishu.ico"; AppUserModelID: "Zhishu.Desktop"
+Name: "{autoprograms}\知树\卸载知树"; Filename: "{uninstallexe}"; IconFilename: "{app}\_internal\desktop\zhishu.ico"
+Name: "{autodesktop}\知树"; Filename: "{app}\Zhishu.exe"; IconFilename: "{app}\_internal\desktop\zhishu.ico"; AppUserModelID: "Zhishu.Desktop"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Zhishu.exe"; Description: "立即启动知树"; Flags: nowait postinstall skipifsilent
@@ -79,6 +78,24 @@ Filename: "{app}\Zhishu.exe"; Description: "立即启动知树"; Flags: nowait p
 const
   WebView2ClientId = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
   WebView2Url = 'https://developer.microsoft.com/microsoft-edge/webview2/';
+
+procedure SHChangeNotify(EventID: Integer; Flags: Cardinal; Item1: String; Item2: Integer);
+  external 'SHChangeNotify@shell32.dll stdcall';
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    // 只通知本软件图标和快捷方式变化，不清空系统缓存或重启 Explorer。
+    // SHCNE_UPDATEITEM + SHCNF_PATHW + SHCNF_FLUSH。
+    SHChangeNotify($2000, $1005, ExpandConstant('{app}\_internal\desktop\zhishu.ico'), 0);
+    SHChangeNotify($2000, $1005, ExpandConstant('{app}\Zhishu.exe'), 0);
+    SHChangeNotify($2000, $1005, ExpandConstant('{autoprograms}\知树\知树.lnk'), 0);
+    SHChangeNotify($2000, $1005, ExpandConstant('{autoprograms}\知树\卸载知树.lnk'), 0);
+    if FileExists(ExpandConstant('{autodesktop}\知树.lnk')) then
+      SHChangeNotify($2000, $1005, ExpandConstant('{autodesktop}\知树.lnk'), 0);
+  end;
+end;
 
 // 始终以 64 位模式运行（ArchitecturesInstallIn64BitMode），因此 HKLM 落在 64 位视图，
 // 这里的 WOW6432Node 字面路径能稳定命中 EdgeUpdate 写入的位置。

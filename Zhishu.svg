@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="知树 Zhishu">
+  <title>Zhishu</title>
+  <rect x="0" y="0" width="512" height="512" rx="115" fill="#0084FF"/>
+  <path d="M132.94 165.04 L385.48 120.1" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="25.68" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M385.48 120.1 L132.94 342.68" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="23.54" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M132.94 342.68 L387.62 385.48" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="27.82" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="132.94" cy="165.04" r="44.94" fill="#ffffff"/>
+  <circle cx="385.48" cy="120.1" r="29.96" fill="#ffffff"/>
+  <circle cx="132.94" cy="342.68" r="27.82" fill="#ffffff"/>
+  <circle cx="387.62" cy="385.48" r="36.38" fill="#ffffff"/>
+</svg>

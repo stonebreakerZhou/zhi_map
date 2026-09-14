@@ -8,6 +8,7 @@ a = Analysis(
     [str(desktop / 'launcher.py')], pathex=[str(root / 'backend')],
     datas=[(str(root / 'apps/web/dist'), 'apps/web/dist'),
            (str(desktop / 'build-info.json'), '.'),
+           (str(desktop / 'zhishu.ico'), 'desktop'),
            (str(root / 'backend/alembic'), 'alembic')],
     hiddenimports=['app.main', 'app.config', 'app.db', 'app.services',
                    'app.domain', 'app.domain.workspace', 'app.domain.utf16',
@@ -19,5 +20,5 @@ a = Analysis(
     binaries=[],
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='Zhishu', console=False, upx=False)
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='Zhishu', console=False, upx=False, icon=str(desktop / 'zhishu.ico'))
 coll = COLLECT(exe, a.binaries, a.datas, name='Zhishu', upx=False)

@@ -102,6 +102,8 @@ function Invoke-InstallerBuild {
 
 Push-Location $PSScriptRoot
 try {
+    py build_icon.py
+    if ($LASTEXITCODE -ne 0) { throw "Icon generation failed: $LASTEXITCODE" }
     py release.py prepare
     if ($LASTEXITCODE -ne 0) { throw "Build identity failed: $LASTEXITCODE" }
     py -m PyInstaller --noconfirm --clean zhishu.spec

@@ -27,7 +27,7 @@ def package():
     source = DESKTOP / 'dist/Zhishu'
     info = json.loads((source / '_internal/build-info.json').read_text(encoding='utf-8'))
     required = ['Zhishu.exe', f'_internal/python{sys.version_info.major}{sys.version_info.minor}.dll',
-                '_internal/apps/web/dist/index.html',
+                '_internal/apps/web/dist/index.html', '_internal/desktop/zhishu.ico',
                 '_internal/pythonnet/runtime/Python.Runtime.dll',
                 '_internal/clr_loader/ffi/dlls/amd64/ClrLoader.dll',
                 '_internal/webview/lib/runtimes/win-x64/native/WebView2Loader.dll',

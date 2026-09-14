@@ -48,7 +48,7 @@ JS 依赖有变动时先跑 `npm install`——`build.ps1` 只跑 `npm run build
 - 静默安装（`Zhishu-Setup-*.exe /SILENT`）后，安装目录与 `desktop\dist\Zhishu` 逐文件哈希一致——PyInstaller 漏收依赖只有启动时才会暴露，这一步能提前挡住
 - 启动装好的 `Zhishu.exe`，能出窗口并加载页面
 - 卸载后 `%LOCALAPPDATA%\Zhishu` 一个文件都没少
-- `py desktop\tests\packaged_smoke.py --parent <已存在的临时目录> --zip desktop\dist\Zhishu-windows-x64.zip`。Fake-IP 网络下，测试使用的域名也必须符合下述兼容策略；未获允许的域名仍会在保存模型配置时返回 400。
+- `py desktop\tests\packaged_smoke.py --parent <已存在的临时目录> --zip desktop\dist\Zhishu-windows-x64.zip`。保存模型配置一步填的是公网 IP 字面量 `93.184.216.34`（只验证持久化，不解析域名、不调用真实服务），因此不依赖 fake-IP 兼容策略，无需为它扩名单。
 
 ### Clash / Mihomo 兼容
 
@@ -60,7 +60,15 @@ JS 依赖有变动时先跑 `npm install`——`build.ps1` 只跑 `npm run build
 
 安装包目前**未做代码签名**，用户首次运行会遇到 SmartScreen 的“未知发布者”提示。签名是消除该提示与 Defender 误报的唯一办法。
 
-向导默认是英文：Inno Setup 不自带简体中文，把第三方 `ChineseSimplified.isl` 放进 Inno Setup 安装目录的 `Languages\` 后，构建脚本会自动改用中文，缺失时给出警告。放一个 `desktop\zhishu.ico` 并取消 [installer.iss](installer.iss) 中 `SetupIconFile` 那行的注释即可设置图标。
+向导默认是英文：Inno Setup 不自带简体中文，把第三方 `ChineseSimplified.isl` 放进 Inno Setup 安装目录的 `Languages\` 后，构建脚本会自动改用中文，缺失时给出警告。
+
+图标唯一设计源为仓库根目录的 [Zhishu.svg](../Zhishu.svg)。每次构建先由 `build_icon.py` 生成 `desktop/zhishu.ico`（16、20、24、32、48、64、128、256 像素，保留透明圆角），统一用于主程序 EXE、窗口／任务栏、安装器、开始菜单与桌面快捷方式及卸载项。替换 SVG 后重新构建即可；也可先运行 `py desktop/build_icon.py` 单独更新 ICO。
+
+快捷方式和卸载项直接引用安装目录的 `_internal/desktop/zhishu.ico`，避免沿用同路径 EXE 的历史图标缓存。程序在创建窗口前设置 `Zhishu.Desktop` AppUserModelID，开始菜单和桌面快捷方式使用同一标识；安装结束后通过 `SHChangeNotify` 定向通知这些文件已更新。这个任务栏标识与不可修改的 Inno Setup `AppId` 是两回事。历史手动固定的任务栏快捷方式若仍显示旧图标，取消固定后从更新的开始菜单快捷方式重新固定。
+
+图标专项验证：`py desktop/tests/packaged_smoke.py --parent "$env:TEMP" --zip desktop/dist/Zhishu-windows-x64.zip --icons-only`。在隔离用户数据中启动打包版两次，通过 `WM_GETICON` 读回窗口实际大小图标，与 ICO 的对应位图比较；不会将完整聊天流程的验证记为已通过。
+
+SVG 转换使用桌面构建依赖 [resvg-py](https://pypi.org/project/resvg-py/)（[MIT](https://github.com/baseplate-admin/resvg-py/blob/master/LICENSE)，基于 Rust resvg，仍在维护；本次验证 0.5.0 的 Windows x64 wheel 约 1.2 MB，无需额外安装 Cairo）。仅构建时导入，不收进软件运行包，安装体积仅增加 ICO 资源。依赖声明在 `backend/pyproject.toml` 的 desktop extra 中。
 
 ## 运行时行为
 

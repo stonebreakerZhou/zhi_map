@@ -24,11 +24,37 @@ import win32api
 import win32crypt
 import win32gui
 import win32process
+import win32ui
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from PIL import ImageGrab
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def verify_window_icon(hwnd, path):
+    """对比实际 WM_GETICON 位图与包内 ICO，避免只检查 EXE 中存在资源。"""
+    def pixels(icon):
+        _, _, _, mask, color = win32gui.GetIconInfo(icon)
+        try:
+            bitmap = win32ui.CreateBitmapFromHandle(color)
+            info = bitmap.GetInfo()
+            return (info['bmWidth'], info['bmHeight']), bitmap.GetBitmapBits(True)
+        finally:
+            win32gui.DeleteObject(mask)
+            win32gui.DeleteObject(color)
+    sizes = []
+    for kind in (win32con.ICON_SMALL, win32con.ICON_BIG):
+        actual = win32gui.SendMessage(hwnd, win32con.WM_GETICON, kind, 0)
+        assert actual, '原生窗口缺少图标'
+        size, actual_pixels = pixels(actual)
+        expected = win32gui.LoadImage(0, str(path), win32con.IMAGE_ICON, *size, win32con.LR_LOADFROMFILE)
+        try:
+            assert pixels(expected)[1] == actual_pixels, f'原生窗口图标与 ICO 不一致：{size}'
+        finally:
+            win32gui.DestroyIcon(expected)
+        sizes.append(size)
+    return sizes
 
 
 def inspect_existing_state():
@@ -104,6 +130,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--parent", type=Path, required=True)
     parser.add_argument("--zip", type=Path)
+    parser.add_argument("--icons-only", action="store_true", help="仅验证打包启动及两次启动的原生窗口图标")
     parser.add_argument("--inspect-existing", action="store_true", help="Opt in to read-only inspection of the real desktop profile")
     args = parser.parse_args()
     assert args.parent.is_dir()
@@ -176,6 +203,16 @@ def main():
                 page.wait_for_load_state("networkidle")
                 ready = page.evaluate("fetch('/readyz').then(r=>r.json())")
                 assert ready["status"] == "ready"
+                if args.icons_only:
+                    hwnd = window_for(process.pid)
+                    assert hwnd, '未找到原生窗口'
+                    sizes = verify_window_icon(hwnd, exe.parent / '_internal/desktop/zhishu.ico')
+                    ImageGrab.grab(bbox=win32gui.GetWindowRect(hwnd)).save(directory / f'native-icon-{cycle}.png')
+                    win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+                    process.wait(timeout=20)
+                    assert process.returncode == 0
+                    evidence['runs'].append({'cycle': cycle, 'native_icon_sizes_verified': sizes, 'exit_code': process.returncode})
+                    continue
                 cookie = next(c for c in context.cookies() if c["name"] == "zhishu_session")
                 assert cookie["secure"] and cookie["httpOnly"] and cookie["expires"] > time.time()
                 if cycle == 0:
@@ -239,10 +276,12 @@ def main():
                 page.get_by_role("button", name="收起主题导航", exact=True).click()
                 hwnd = window_for(process.pid)
                 assert hwnd, "No visible native GUI window"
+                icon_sizes = verify_window_icon(hwnd, exe.parent / '_internal/desktop/zhishu.ico')
                 modules = native_modules(process.pid)
                 (directory / f"native-modules-{cycle}.json").write_text(json.dumps(modules, ensure_ascii=False, indent=2), encoding="utf-8")
                 ImageGrab.grab(bbox=win32gui.GetWindowRect(hwnd)).save(directory / f"native-window-{cycle}.png")
                 evidence["runs"].append({"pid": process.pid, "url": page.url, "webview_version": version["Browser"], "ready": ready, "secure_cookie_accepted": True, "dpapi_blob_bytes": len(blob), "credential_decrypted": True, "same_identity": True, "workspace_revision": workspace["revision"]})
+                evidence["runs"][-1]["native_icon_sizes_verified"] = icon_sizes
                 previous_cookie, previous_workspace, previous_key = cookie["value"], workspace, blob
                 win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
                 process.wait(timeout=20)
@@ -261,8 +300,9 @@ def main():
                 if args.inspect_existing:
                     evidence["existing_state_unchanged"] = True
                 (directory / "evidence.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
-    verify_native_error(exe, directory, environment)
-    evidence["native_error_dialog_verified"] = True
+    if not args.icons_only:
+        verify_native_error(exe, directory, environment)
+        evidence["native_error_dialog_verified"] = True
     if args.inspect_existing:
         assert inspect_existing_state()[0] == user_hashes
     (directory / "evidence.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
