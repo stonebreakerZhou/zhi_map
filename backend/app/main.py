@@ -117,6 +117,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Zhishu", lifespan=lifespan)
+from .graph_routes import router as graph_router
+app.include_router(graph_router(user, db))
 from .request_limits import BoundedJSON
 app.add_middleware(BoundedJSON)
 

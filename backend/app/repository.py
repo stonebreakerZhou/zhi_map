@@ -18,11 +18,13 @@ from sqlalchemy import (
     func,
     cast,
     LargeBinary,
+    text,
 )
 
 from .db import Base, Workspace, utcnow
 from .domain import empty_state, validate_state, transition
 from .services import error
+from .graph_schema import positions
 
 heads = Table(
     "history_heads",
@@ -186,6 +188,13 @@ class Repository:
         self.db.execute(
             update(heads).where(self.owned(heads)).values(active=state["active"])
         )
+        self.initialize_positions()
+
+    def initialize_positions(self):
+        # The graph repository allocates missing forest positions lazily in SQL.
+        # Domain writes only prune deleted IDs, preserving explicit layout versions.
+        live = select(branches.c.id).where(self.owned(branches))
+        self.db.execute(delete(positions).where(self.owned(positions), positions.c.branch_id.not_in(live)))
 
     def snapshot(self, loaded=None):
         self.ensure()
@@ -372,6 +381,8 @@ class Repository:
 
     def action(self, payload, compact=True):
         self.ensure()
+        if payload["type"] in {"create", "switch"}:
+            return self.navigation(payload, compact)
         if payload["type"] in {"fork", "expand"}:
             return self.fork(payload, compact)
         if payload["type"] in {"send", "answer", "draft", "retryToDraft", "keep"}:
@@ -404,6 +415,35 @@ class Repository:
         if compact:
             return {**self.view(), "affectedIds": list({x for x in loaded | {payload.get('branchId'), state['active']} if x}), "undoToken": token}
         return self.snapshot()
+
+    def navigation(self, payload, compact=True):
+        """Navigation and creation touch only the selected row, even in a large graph."""
+        if payload["type"] == "switch":
+            bid = payload.get("branchId")
+            self.meta(bid)
+            created = None
+        else:
+            created = transition(empty_state(), payload)
+            bid = created["active"]
+        if self.db.execute(update(Workspace).where(Workspace.user_id == self.uid,
+                Workspace.version == payload["revision"])
+                .values(version=payload["revision"] + 1, updated_at=utcnow())).rowcount != 1:
+            error(409, "工作区已更新，请刷新后重试。")
+        if created:
+            session = created["sessions"][0]
+            branch = created["branches"][0]
+            branch.pop("entries")
+            for table, value in ((sessions, session), (branches, branch)):
+                maximum = self.db.scalar(select(func.max(table.c.position)).where(self.owned(table)))
+                row = {"user_id": self.uid, "id": value["id"], "position": maximum + 1 if maximum is not None else 0, "data": dump(value)}
+                if table is branches:
+                    row["revision"] = 0
+                self.db.execute(insert(table).values(**row))
+        self.db.execute(update(heads).where(self.owned(heads)).values(active=bid))
+        if created:
+            self.initialize_positions()
+        self.db.commit()
+        return {**self.view(), "affectedIds": [bid]} if compact else self.snapshot()
 
     def references(self, payload, compact):
         bid = payload.get("branchId") or self.view()["active"]

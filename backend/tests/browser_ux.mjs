@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { navClick } from './browser_navigation.mjs';
 
 export async function verifyUX(browser, url) {
   let page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -7,7 +8,7 @@ export async function verifyUX(browser, url) {
   const config = () => page.evaluate(async () => (await (await fetch('/api/ai/config')).json()));
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.route('**/api/ai/config', route => route.request().method() === 'GET' ? route.fulfill({ status: 503, json: { error: 'load failed' } }) : route.continue());
-  await page.locator('#settings-button').click();
+  await navClick(page, '#settings-button');
   await page.getByRole('button', { name: '重新加载模型配置' }).waitFor();
   assert(await page.locator('#save-ai-config').isDisabled());
   await page.unroute('**/api/ai/config');
@@ -67,55 +68,55 @@ export async function verifyUX(browser, url) {
   await page.locator('#ai-key').fill('discard-this');
   await page.locator('#close-modal').click();
   await discard.getByRole('button', { name: '放弃修改', exact: true }).click();
-  await page.locator('#settings-button').click();
+  await navClick(page, '#settings-button');
   await page.locator('#ai-key').waitFor();
   assert.equal(await page.locator('#ai-key').inputValue(), '');
   await page.locator('#close-modal').click();
 
   let creates = 0;
   page.on('request', req => { if (req.url().includes('/api/workspace/actions') && req.postDataJSON()?.type === 'create') creates++; });
-  await page.locator('#create').dblclick();
+  await navClick(page, '#create', true);
   await page.locator('#draft').waitFor();
-  await page.locator('#create').click();
+  await navClick(page, '#create');
   assert.equal(creates, 1);
   await page.waitForFunction(() => document.getElementById('draft') === document.activeElement);
   await page.locator('#manage-button').click();
   await page.locator('#topic-title').fill('First topic');
   await page.locator('#topic-title').press('Enter');
   await page.locator('#chat-header h1').getByText('First topic', { exact: true }).waitFor();
-  await page.locator('#create').click();
+  await navClick(page, '#create');
   await page.locator('#chat-header h1').getByText('新的学习问题', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '菜单', exact: true }).click();
   await page.getByRole('button', { name: '更多：First topic', exact: true }).click();
   await page.locator('#topic-title').fill('Renamed other topic');
   await page.locator('#topic-tags').fill('math, math， algebra ');
   await page.locator('#topic-title').press('Enter');
   await page.getByRole('button', { name: '更多：Renamed other topic', exact: true }).waitFor();
   assert.equal(await page.locator('#chat-header h1').textContent(), '新的学习问题');
+  await page.getByRole('button', { name: '收起主题导航', exact: true }).click();
   await page.locator('#manage-button').click();
   await page.locator('[data-delete-session]').click();
   confirmation = page.getByRole('dialog', { name: '永久删除整个会话主线？', exact: true });
   assert(await confirmation.getByRole('button', { name: '永久删除会话', exact: true }).isDisabled());
   await confirmation.getByRole('button', { name: '取消', exact: true }).click();
   await page.locator('[data-delete-branch]').click();
-  confirmation = page.getByRole('dialog', { name: '删除此主题？', exact: true });
+  confirmation = page.getByRole('dialog', { name: '移除此主题？', exact: true });
   await confirmation.getByRole('button', { name: '取消', exact: true }).click();
   await page.locator('[data-delete-branch]').click();
-  await page.route('**/api/workspace/actions?response=compact', async route => {
-    if (route.request().postDataJSON().type === 'delete') { await new Promise(r => setTimeout(r, 200)); return route.fulfill({ status: 503, json: { error: 'delete failed' } }); }
-    return route.continue();
-  });
-  await confirmation.getByRole('button', { name: '确认删除主题', exact: true }).click();
+  await page.route('**/api/graph/removals', route => route.request().method() === 'POST' ? route.fulfill({ status: 503, json: { error: 'delete failed' } }) : route.continue());
+  await confirmation.getByRole('button', { name: '确认移除主题', exact: true }).click();
   await confirmation.getByRole('alert').getByText('delete failed').waitFor();
-  await page.unroute('**/api/workspace/actions?response=compact');
-  await confirmation.getByRole('button', { name: '确认删除主题', exact: true }).click();
-  await page.locator('#undo').click();
-  await page.locator('#chat-header h1').getByText('新的学习问题', { exact: true }).waitFor();
+  await page.unroute('**/api/graph/removals');
+  await confirmation.getByRole('button', { name: '确认移除主题', exact: true }).click();
+  await page.locator('.graph-recovery').getByRole('button', { name: '恢复', exact: true }).click();
+  await navClick(page, '[data-switch] >> text=新的学习问题');
   await page.locator('#manage-button').click();
   await page.locator('[data-delete-branch]').click();
-  await confirmation.getByRole('button', { name: '确认删除主题', exact: true }).click();
-  await page.locator('#undo').waitFor();
-  await page.locator('#draft').fill('mutation invalidates undo');
-  await page.locator('#undo').waitFor({ state: 'hidden' });
+  await confirmation.getByRole('button', { name: '确认移除主题', exact: true }).click();
+  await page.locator('.graph-recovery').waitFor();
+  await page.locator('#draft').fill('unrelated mutation preserves recovery');
+  await page.locator('.graph-recovery').getByRole('button', { name: '恢复', exact: true }).click();
+  assert.equal(await page.locator('#draft').inputValue(), 'unrelated mutation preserves recovery');
 
   // Real pointer and keyboard selections, with viewport geometry assertions.
   await page.close();
@@ -131,6 +132,7 @@ export async function verifyUX(browser, url) {
     await page.mouse.down();
     await page.mouse.move(bounds.x + Math.min(bounds.width - 2, 130), bounds.y + bounds.height / 2, { steps: 12 });
     await page.mouse.up();
+    await page.screenshot({ path: 'test-results/ux-pointer-diagnostic.png' });
     await page.locator('#expand-selection').waitFor();
   };
   const inBounds = async () => {
@@ -174,7 +176,7 @@ export async function verifyUX(browser, url) {
   await page.waitForFunction(() => document.querySelector('#nav-toggle').getAttribute('aria-expanded') === 'false');
   await page.waitForFunction(() => document.getElementById('draft') === document.activeElement);
   await page.locator('#nav-toggle').click();
-  await page.locator('#settings-button').click();
+  await navClick(page, '#settings-button');
   await page.locator('#ai-model').waitFor();
   await page.screenshot({ path: 'test-results/ux-settings-mobile.png' });
   assert(await page.locator('dialog').evaluate(e => e.scrollWidth <= e.clientWidth));
@@ -184,6 +186,10 @@ export async function verifyUX(browser, url) {
   await selectWithPointer();
   await inBounds();
   await page.locator('.selection-feedback').waitFor({ state: 'hidden' });
+  const mobileCapsule = await page.locator('.graph-capsule').boundingBox();
+  const mobileSend = await page.locator('#send').boundingBox();
+  assert(mobileCapsule.x >= 23 && mobileCapsule.x + mobileCapsule.width <= 367, 'Focus capsule must keep narrow-screen safe edges');
+  assert(mobileSend.x >= 0 && mobileSend.x + mobileSend.width <= 390, 'Send must remain inside the narrow viewport');
   await page.screenshot({ path: 'test-results/ux-selection-mobile.png' });
   await page.keyboard.press('Escape');
   const formulaMessage = page.locator('.message.assistant').filter({ hasText: '平方项总是非负' }).first();
@@ -216,7 +222,7 @@ export async function verifyUX(browser, url) {
     return route.continue();
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.locator('#settings-button').click();
+  await navClick(page, '#settings-button');
   await page.locator('#ai-model').fill('newer-than-initial');
   await page.locator('#ai-base-url').fill(`${url}/mock`);
   await page.locator('#ai-key').fill('isolated-stale-response-test');
@@ -227,5 +233,5 @@ export async function verifyUX(browser, url) {
   await page.waitForLoadState('networkidle');
   assert.equal(await page.locator('.top-title').textContent(), 'newer-than-initial');
   await page.close();
-  console.log('UX: config retry/save-and-test/clear/discard; create dedupe/focus; non-active rename; delete failure/undo invalidation; pointer+keyboard selection; desktop/mobile geometry passed.');
+  console.log('UX: config retry/save-and-test/clear/discard; create dedupe/focus; non-active rename; remove failure/independent recovery; pointer+keyboard selection; desktop/mobile geometry passed.');
 }

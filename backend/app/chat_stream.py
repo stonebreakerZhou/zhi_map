@@ -15,6 +15,7 @@ from .services import chat_request, context_messages, error
 # This application supports one backend process, including desktop.
 _runs: dict[tuple[str, str], str] = {}
 _tasks = {}
+_removing: set[tuple[str, str]] = set()
 
 
 def signature(branch):
@@ -42,7 +43,7 @@ def start(input, uid, database, snapshot, replace, transition):
     ):
         error(409, "没有等待回答的问题。")
     key = (uid, input.branchId)
-    if key in _runs:
+    if key in _runs or key in _removing:
         error(409, "此主题已在生成回答。")
     request = chat_request(
         database,

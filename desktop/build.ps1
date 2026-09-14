@@ -73,7 +73,8 @@ function Get-WebView2Bootstrapper {
 function Invoke-InstallerBuild {
     $iscc = Get-InnoCompiler
     if (-not $iscc) {
-        throw 'Inno Setup not found. Install 6.3+ from https://jrsoftware.org/isdl.php, or pass -SkipInstaller to build only the ZIP.'
+        Write-Warning 'Inno Setup not found; installer build skipped (portable ZIP remains the only release artifact).'
+        return
     }
     $found = Get-InnoVersion
     if ($found -and $found -lt [version]'6.3') {

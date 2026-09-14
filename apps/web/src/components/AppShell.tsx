@@ -12,6 +12,7 @@ import { TopicSettings } from './TopicSettings.js';
 import { ProviderSettings } from './ProviderSettings.js';
 import { DataSettings } from './DataSettings.js';
 import { Dialog } from './Dialog.js';
+import { Constellation } from '../graph/Constellation.js';
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
   state = { error: false };
@@ -24,6 +25,8 @@ export function AppShell() {
   const [modal, setModal] = useState<'' | 'settings' | 'references' | 'topic' | 'context'>(''), [selection, setSelection] = useState<Selection>(), [jump, setJump] = useState<Jump>(), [nav, setNav] = useState(false);
   const [settingsState, setSettingsState] = useState({ dirty: false, busy: false }), [config, setConfig] = useState<AiConfig>();
   const [dataBusy, setDataBusy] = useState(false);
+  const [referenceSource, setReferenceSource] = useState<string>();
+  const createGuard = useRef(false);
   const configChanged = useRef(false);
   const acceptConfig = useCallback((c: AiConfig) => { configChanged.current = true; setConfig(c); }, []);
   // The first workspace response establishes the anonymous session cookie.
@@ -31,19 +34,29 @@ export function AppShell() {
   const providerState = useCallback((dirty: boolean, busy: boolean) => setSettingsState({ dirty, busy }), []);
   const close = () => { setModal(''); setSelection(undefined); setSettingsState({ dirty: false, busy: false }); };
   const navigated = () => { setNav(false); requestAnimationFrame(() => document.getElementById('draft')?.focus()); };
+  const newTopic = async () => {
+    if (createGuard.current) return;
+    createGuard.current = true;
+    try {
+      if (!(app.branch?.title === '新的学习问题' && !app.branch.parent && !app.branch.draft && !app.page.items.length && app.page.nextCursor === null)) await app.action({ type: 'create', title: '新的学习问题' });
+      navigated();
+    } catch (e) { app.report(e); }
+    finally { createGuard.current = false; }
+  };
   const locate = async (target: Jump) => { await app.action({ type: 'switch', branchId: target.branchId }, target.entryId); setJump(target); };
   const branch = app.branch;
   if (!app.initialized) return <main role="status"><h1>正在加载学习空间…</h1><p>{app.notice}</p><button onClick={() => void app.load().catch(app.report)}>重试</button></main>;
-  return <div className={nav ? 'nav-open' : ''} data-cache-pages={app.cache.size} data-cache-entries={app.cache.entryCount}>
+  return <div className={`graph-workspace ${nav ? 'nav-open' : ''}`} data-cache-pages={app.cache.size} data-cache-entries={app.cache.entryCount}>
     <a className="skip" href="#draft">跳到输入框</a><TopicNavigator app={app} navigated={navigated} settings={() => { setNav(false); setModal('settings'); }} />
     {nav && <button className="nav-backdrop" aria-label="收起主题导航" onClick={() => { setNav(false); document.getElementById('nav-toggle')?.focus(); }} />}
     <main className="workspace"><header className="topbar"><button id="nav-toggle" aria-expanded={nav} onClick={() => setNav(!nav)}>菜单</button><button className="top-title" title={config?.model ?? '设置模型连接'} onClick={() => setModal('settings')}>{config?.configured ? config.model : '设置模型'}</button><div className="top-actions"><button id="related-button" disabled={!branch} onClick={() => setModal('references')}>相关主题</button><button id="context-button" disabled={!branch} onClick={() => setModal('context')}>上下文</button><button id="manage-button" disabled={!branch} onClick={() => setModal('topic')}>管理</button></div></header>
-      <section className="chat" aria-label="当前讨论"><div id="chat-header"><h1>{branch?.title ?? '让好奇有迹可循'}</h1>{branch?.selection && <blockquote>{branch.selection.text}</blockquote>}{branch?.parent && <button data-return onClick={() => void locate({ branchId: branch.parent!.branchId, entryId: branch.parent!.entryId, start: branch.selection?.start ?? 0, end: branch.selection?.end ?? 0 }).catch(app.report)}>返回原讨论</button>}</div>
+      <Constellation app={app} restoreReading={setJump} modal={Boolean(modal || selection)} references={source => { setReferenceSource(source); setModal('references'); }} newTopic={() => void newTopic()}>
+      <section className="chat" aria-label="当前讨论"><div id="chat-header"><h1>{branch?.title ?? '让好奇有迹可循'}</h1>{branch?.selection && <blockquote>{branch.selection.text}</blockquote>}{branch?.parent && <button data-return onClick={() => void locate({ branchId: branch.parent!.branchId, entryId: branch.parent!.entryId, start: branch.selection?.start ?? 0, end: branch.selection?.end ?? 0 }).catch(app.report)}>返回原讨论</button>}{branch?.sourceOrigin && !branch.parent && <p>原父主题已移除；出处快照保留。</p>}</div>
         {branch ? <MessageViewport app={app} select={setSelection} jump={jump} locate={j => void locate(j).catch(app.report)} /> : <div className="onboarding"><h2>从一个问题开始</h2><p>连接模型，然后新建学习问题。在回答中选中文字，即可展开独立讨论。</p><button className="primary" onClick={() => setModal('settings')}>{config?.configured ? `模型已连接 · ${config.model}` : '设置模型连接'}</button><button data-sample onClick={() => void app.action({ type: 'sample' }).catch(app.report)}>先体验人工学习示例</button></div>}
-      </section><Composer app={app} references={() => setModal('references')} /><div className="storagebar"><span>分页 40 条 · AI 最近 100 条 / 64,000 字符</span><button id="refresh" onClick={() => void app.flush().then(() => { app.cache.clear(); return app.load(); }).catch(app.report)}>刷新工作区</button></div>
+      </section><Composer app={app} references={() => setModal('references')} /></Constellation><div className="storagebar"><span>分页 40 条 · AI 最近 100 条 / 64,000 字符</span><button id="refresh" onClick={() => void app.flush().then(() => { app.cache.clear(); return app.load(); }).catch(app.report)}>刷新工作区</button></div>
     </main><div id="notice" role="status">{app.notice && <>{app.notice}<button aria-label="关闭提示" onClick={() => { app.notice = ''; app.changed(); }}>关闭</button></>}</div>{app.undoToken && <div id="undo-bar">已删除主题 · 下一次修改前可撤销（最长 10 分钟）<button id="undo" disabled={app.undoBusy} onClick={() => void app.undo().catch(app.report)}>撤销</button></div>}
     {selection && branch && <SelectionDialog app={app} selection={selection} close={close} />}
-    {modal === 'references' && branch && <ReferencesDialog app={app} close={close} />}
+    {modal === 'references' && branch && <ReferencesDialog app={app} initialSource={referenceSource} close={() => { setReferenceSource(undefined); close(); }} />}
     {modal === 'topic' && branch && <TopicSettings app={app} close={close} />}
     {modal === 'settings' && <Dialog title="设置与数据" close={close} dirty={settingsState.dirty} locked={settingsState.busy || dataBusy}><ProviderSettings state={providerState} changed={acceptConfig} /><DataSettings app={app} busyChanged={setDataBusy} /></Dialog>}
     {modal === 'context' && <Dialog title="当前上下文" close={close}><p>选区原文始终发送并计入 64,000 字符预算；剩余预算保留最近最多 100 条消息。较早背景和历史引用可能被裁剪，发生裁剪时会提示；完整历史仍可分页查看。选区与最新问题超出预算时会阻止生成。</p><button onClick={() => { void app.navigate(-1).catch(app.report); close(); }}>查看最早一页</button></Dialog>}

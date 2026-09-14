@@ -4,6 +4,10 @@ React + Vite TypeScript renders server-paged views from Python FastAPI. It conta
 
 ## Frontend Architecture
 
+`graph/Constellation.tsx` is the default workspace, composed around the existing message viewport and single composer. `graph/gestures.ts` owns bounded pointer intent and segment/rectangle geometry; `graph/api.ts` owns contracts; `graph/Recovery.tsx` renders the fixed-screen recovery bubble and paged receipts. SVG/HTML uses existing React dependencies with no copied MindFlow implementation. One projection window is retained, and obsolete queries are debounced/cancelled. Graph selections, camera and contacts do not become model context.
+
+Run `npm run test:gestures` for geometry and `npm run test:browser` for existing workflows plus real mouse graph interactions. Open gaps include full shell morphing, collision-aware LOD hysteresis, subtree and camera-history navigation, touch pinch, read-only policy and native desktop validation. The stable insertion-order grid is not the final constellation tree layout.
+
 `main.tsx` mounts `components/AppShell.tsx` inside an error boundary. The shell composes `TopicNavigator`, `MessageViewport`, `Composer`, `SelectionDialog`, `ReferencesDialog`, `TopicSettings`, `ProviderSettings`, and `DataSettings`. `Dialog` uses native modal focus containment, Escape, focus restoration and asynchronous error handling. No imperative bootstrap or dialog templates remain. Sanitized Markdown/KaTeX and exact UTF-16 browser selection helpers remain isolated in `render.ts` / `selection.ts`.
 
 `hooks.ts` owns cancellable-effect query subscriptions. `controller.ts` owns an LRU entry-page cache (3 pages per branch, 8 total, 40 entries per page), the current branch metadata/page, serialized commands and debounced dirty drafts. Failed draft persistence prevents switching; conflicts retain drafts and refresh only the revision before retry. Run state is separate, capped at 3 concurrent runs; SSE requires started/runId/ordered seq, bounded buffers and rAF paints. Completion invalidates only affected entry caches and refreshes the active branch only if it is still the run's branch, preserving dirty drafts.

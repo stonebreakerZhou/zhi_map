@@ -12,7 +12,9 @@
     "typecheck": "tsc --build",
     "test": "py -m pytest backend/tests -q",
     "keys:generate": "node -e \"console.log(require('node:crypto').randomBytes(32).toString('base64'))\"",
-    "test:browser": "py backend/tests/browser_smoke.py"
+    "test:browser": "py backend/tests/browser_smoke.py",
+    "test:gestures": "node backend/tests/gestures.mjs",
+    "test:pixel": "npm run build:web && vite preview --config apps/web/vite.config.ts --host 127.0.0.1 --port 4173"
   },
   "workspaces": ["apps/web"],
   "devDependencies": {

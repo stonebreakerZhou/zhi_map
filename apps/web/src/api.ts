@@ -5,13 +5,16 @@ export type Page<T> = { items: T[]; nextCursor: number | null; cursor?: number }
 export type Snapshot = { state: State; revision: number };
 export type AiConfig = { configured: boolean; provider?: string; maxTokens?: number; temperature?: number | null; baseUrl: string | null; model: string | null; timeoutMs: number | null; updatedAt: string | null; source: 'user' | 'environment' | 'none' };
 export class ConflictError extends Error {}
+export class RequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { credentials: 'same-origin', headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) }, ...init });
   const body = await response.json() as { error?: string } & T;
   if (!response.ok) {
     if (response.status === 409) throw new ConflictError(body.error ?? '工作区已更新。');
-    throw new Error(body.error ?? '请求失败。');
+    throw new RequestError(body.error ?? '请求失败。', response.status);
   }
   return body;
 }

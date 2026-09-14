@@ -84,3 +84,43 @@ def test_cancel_interrupts_idle_provider_and_closes_resources(storage, monkeypat
             assert ("a", bid) not in chat_stream._runs and not chat_stream._tasks
             assert repo.meta(bid)["awaiting"]
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("finish_first", [False, True])
+def test_remove_finish_race_restores_only_confirmed_answer(storage, monkeypatch, finish_first):
+    from app.removals import RemovalRepository
+    monkeypatch.setattr(chat_stream, "engine", storage)
+    monkeypatch.setattr(chat_stream, "chat_request", lambda *args: object())
+
+    async def simulated(request, run_id):
+        yield {"type": "started", "runId": run_id, "seq": 1}
+        yield {"type": "delta", "runId": run_id, "seq": 2, "text": "race answer"}
+        yield {"type": "completed", "runId": run_id, "seq": 3}
+
+    monkeypatch.setattr(chat_stream, "events", simulated)
+
+    async def run():
+        with Session(storage) as db:
+            state = seed_state()
+            bid = state["active"]
+            state = transition(state, {"type": "send", "branchId": bid, "text": "race question"})
+            repo = Repository(db, "a")
+            repo.replace(state, 0)
+            response = chat_stream.start(SimpleNamespace(branchId=bid, revision=1, response="compact"), "a", db, None, None, None)
+            first = json.loads((await anext(response.body_iterator))[6:])
+            if finish_first:
+                events = [json.loads(raw[6:]) async for raw in response.body_iterator]
+                assert events[-1]["type"] == "completed"
+            else:
+                chat_stream.cancel("a", bid, first["runId"])
+            removal = RemovalRepository(db, "a")
+            removal.remove("race", [{"id": bid, "revision": repo.meta(bid)["revision"]}])
+            if not finish_first:
+                events = [json.loads(raw[6:]) async for raw in response.body_iterator]
+                assert events[-1]["type"] == "cancelled"
+            removal.restore("race")
+            messages = repo.page(bid, 40, -1)["items"]
+            assert sum(e["text"] == "race answer" for e in messages) == int(finish_first)
+            assert ("a", bid) not in chat_stream._runs
+
+    asyncio.run(run())

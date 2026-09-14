@@ -2,6 +2,8 @@
 
 ## 模块边界
 
+原生图复用 `history_branches`／`history_entries`。`graph.py` 有界投影节点、类型关系与原文摘录；`graph_schema.py` 仅新增布局、联系及操作资料。`removals.py` 保存逐操作 tombstone，检查目标与依赖，不恢复全工作区快照。`graph_routes.py` 接到既有 FastAPI，由 `apps/web/src/graph/` 和原有桌面宿主链路消费。初始布局、完整连续胶囊及原生验收的当前缺项见根 README，不把规范目标当成已完成能力。
+
 React Web 客户端负责渲染服务端分页视图并发送命令。它不决定持久状态的变更，不存储学习数据，也不保存模型凭据。组件职责见 [web 客户端](../apps/web/README.md)。
 
 `backend/app/domain` 负责确定性的状态变更、校验，以及与 JavaScript 兼容的 UTF-16 偏移。它不依赖 HTTP、数据库或浏览器。
@@ -12,7 +14,7 @@ FastAPI 的 Pydantic 模型负责 HTTP 边界。Python API 认证本地匿名会
 
 1. 首次请求会创建一个匿名用户，并下发 `HttpOnly`、`SameSite=Lax` 的会话 Cookie。
 2. 客户端读取 revision/active 摘要、分支元数据和 cursor 页，随后带着 revision 发送命令；普通写操作只返回 compact 影响 ID。
-3. Repository 对发送、回答、草稿和重试执行增量 SQL；分叉逐条迭代来源前缀，引用只读取选中消息并以 SQL 检查重复。过期 revision 返回冲突。删除撤销只给前端单次使用 token，正文保存在服务端。
+3. Repository 对发送、回答、草稿、重试和导航执行增量 SQL；分叉逐条迭代来源前缀，引用只读取选中消息并以 SQL 检查重复。旧命令检查工作区 revision；图移除检查目标版本，返回独立十分钟操作收据。恢复不因无关草稿失效，也不恢复全局旧状态；旧撤销端点仅保留兼容。
 4. AI 请求在最近 100 条、合计最多 64,000 字符的预算内组装输入，确保包含选区和最新问题；裁剪历史会向用户和模型说明，必需内容超预算则阻止生成。先解析会话级模型配置、再回退到环境变量，在服务端调用提供方，最后增量保存回答。流结束只返回 compact 结果，不替换其他分支视图或未保存草稿。
 5. 小型备份保留 `{ schemaVersion: 2, state }`；大型备份使用有记录大小限制的 NDJSON、磁盘暂存与最终原子复制。两者均不包含模型配置。
 

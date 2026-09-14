@@ -6,11 +6,19 @@ Zhishu is a self-hosted learning workspace for branching a discussion from an ex
 
 ## Learning Workflow
 
-- **Start and organize discussions:** create a topic, search titles or tags, and use its “More” menu to rename, favorite or delete it. Branch deletion offers undo before the next workspace change, for up to ten minutes; deleting an entire session's mainline requires a separate, irreversible confirmation.
+- **Start and organize discussions:** create a topic, search titles or tags, and use its “More” menu to rename, favorite or remove it. Removal has an independent ten-minute server receipt; unrelated drafts and answers do not invalidate recovery. Deleting an entire session's mainline requires a separate, irreversible confirmation.
 - **Explore a passage:** select text in a message to show the nearby “Expand discussion” and “Copy” toolbar. Preview the passage, choose background up to the selection endpoint, and enter a question. Whole-message branching uses the same preview before creating a discussion.
 - **Connect and return:** explicitly choose messages or ranges from another topic to add reference snapshots, then return to the original passage whenever needed. Topic and message lists are loaded in pages rather than as a full workspace.
 
 ## Quick Start
+
+### Native constellation implementation status
+
+The default React workspace renders native branch IDs with SVG relationships and an HTML conversation capsule. It provides Focus/Peek/Overview controls, a stable editor, blank-space pan, long-hold lasso, connector/title-hold linking, explicit position editing, and right-stroke removal preview followed by server-backed recovery. Text selection and provider settings use the existing components. Contacts never enter AI context; reference edges derive from existing reference entries.
+
+`/api/graph` is bounded to 200 objects, 400 edges and 256 KiB. Alembic `0005_constellation` adds layout metadata, contacts and independent removal receipts to the existing database. Current history exports do not include graph positions, contacts or receipts; NDJSON replacement clears these graph-specific records.
+
+**QA-010 is not yet fully delivered:** the initial layout is an insertion-order grid, not a hierarchical constellation layout. Full subtree expansion, collision aggregation, continuous active-node shell morphing, camera/navigation history and native WebView2/Windows scaling verification remain open. Browser evidence is in `test-results/graph-*.png` and `graph-measurements.json`; headless RAF samples are not a measured desktop 60fps claim. The latest portable ZIP is generated under `desktop/dist/`; an Inno Setup installer is produced only when Inno Setup is available.
 
 Requires Node.js 22.12+ (or 24 LTS), npm, and Python 3.12+. SQLite is embedded; Docker and an external database are not required.
 
@@ -94,6 +102,7 @@ The browser suite also covers settings failure recovery, unsaved edits, topic op
 
 ## Documentation
 
+- [Chinese standards](docs/standards/README.md)
 - [Architecture](docs/architecture.md)
 - [Python backend](backend/README.md)
 - [Web client](apps/web/README.md)

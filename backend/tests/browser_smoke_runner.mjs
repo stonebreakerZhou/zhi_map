@@ -3,6 +3,8 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { verifyUX } from './browser_ux.mjs';
+import { navClick, focusConversation } from './browser_navigation.mjs';
+import { verifyGraph } from './browser_graph.mjs';
 
 const url = process.argv[2];
 const chrome = process.env.CHROME_PATH ?? [
@@ -12,6 +14,10 @@ const chrome = process.env.CHROME_PATH ?? [
 if (!url || !chrome || !existsSync(chrome)) throw new Error('Set CHROME_PATH to a Chrome or Chromium executable.');
 
 const browser = await chromium.launch({ executablePath: chrome, headless: true });
+if (process.env.GRAPH_ONLY) {
+  try { await verifyGraph(browser, url); } finally { await browser.close(); }
+  process.exit(0);
+}
 if (process.env.UX_ONLY) {
   try { await verifyUX(browser, url); } finally { await browser.close(); }
   process.exit(0);
@@ -25,7 +31,7 @@ try {
   const current = () => page.evaluate(async () => { const view = await (await fetch('/api/workspace/view')).json(); const branch = await (await fetch(`/api/branches/${view.active}`)).json(); const entries = await (await fetch(`/api/branches/${view.active}/entries?limit=40`)).json(); return { ...branch, entries: entries.items }; });
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.locator('#connection').getByText('本地分页存储').waitFor();
+  await page.locator('#connection').getByText('本地分页存储').waitFor({ state: 'attached' });
 
   await page.locator('[data-sample]').click();
   const assistant = page.locator('article.message.assistant').first();
@@ -55,10 +61,10 @@ try {
   await page.waitForFunction(() => window.getSelection()?.toString() === '平方项总是非负');
 
   await page.locator('#refresh').click();
-  await page.locator('#create').click();
+  await navClick(page, '#create');
   await page.locator('#chat-header h1').getByText('新的学习问题').waitFor();
   for (const family of ['openai', 'anthropic', 'gemini']) {
-    await page.locator('#settings-button').click();
+    await navClick(page, '#settings-button');
     await page.locator('#ai-provider').selectOption(family);
     await page.locator('#ai-base-url').fill(`${url}/mock`);
     await page.locator('#ai-model').fill('test-model');
@@ -88,6 +94,7 @@ try {
     if (branch.entries.filter(e => e.role === 'assistant').length !== ['openai', 'anthropic', 'gemini'].indexOf(family) + 1) throw new Error('Cancelled or late answer was persisted');
   }
   await page.reload({ waitUntil: 'networkidle' });
+  await focusConversation(page);
   if (await page.locator('article.message.assistant[data-entry]').count() !== 3) throw new Error('Restart/reload lost answers');
   await page.locator('#related-button').click();
   await page.locator('.reference-choice').first().locator('input[type=checkbox]').check();
@@ -100,13 +107,13 @@ try {
   await page.locator('article.reference [data-jump]').click();
   await page.locator('#chat-header h1').getByText('二次函数：从配方看见顶点').waitFor();
   await page.waitForFunction(text => window.getSelection()?.toString() === text, reference.text);
-  await page.locator('#create').click();
+  await navClick(page, '#create');
   await page.locator('#chat-header h1').getByText('新的学习问题').waitFor();
   const backgroundRun = (await current()).id;
   await page.locator('#draft').fill('background generation');
   await page.locator('#send').click();
   await page.locator('#stream-output').getByText('增量😀', { exact: false }).waitFor();
-  await page.locator(`[data-switch="${child.parent.branchId}"]`).click();
+  await navClick(page, `[data-switch="${child.parent.branchId}"]`);
   await page.locator('#chat-header h1').getByText('二次函数：从配方看见顶点').waitFor();
   await page.locator('#draft').fill('draft on another branch');
   await page.waitForFunction(async id => !(await (await fetch(`/api/branches/${id}`)).json()).awaiting, backgroundRun);
@@ -119,7 +126,7 @@ try {
   records.push({ type: 'end', entries: 10000 });
   const fixture = join('test-results', 'large.ndjson');
   await writeFile(fixture, records.map(r => JSON.stringify(r)).join('\n') + '\n');
-  await page.locator('#settings-button').click();
+  await navClick(page, '#settings-button');
   await page.locator('#import-ndjson').setInputFiles(fixture);
   await page.locator('#transfer-progress').getByText('已导入 10000 条消息。').waitFor();
   await page.locator('#close-modal').click();
@@ -149,25 +156,26 @@ try {
     if (route.request().postDataJSON().type === 'draft') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'draft disk failure' }) });
     return route.continue();
   });
-  await page.locator('[data-switch="large-1"]').click();
+  await navClick(page, '[data-switch="large-1"]');
   await page.locator('#notice').getByText('draft disk failure').waitFor();
   if (await page.locator('#draft').inputValue() !== 'preserved draft') throw new Error('Failed flush lost draft');
   await page.unroute('**/api/workspace/actions?response=compact');
   for (let b = 1; b <= 10; b++) {
-    await page.locator(`[data-switch="large-${b}"]`).click();
+    await navClick(page, `[data-switch="large-${b}"]`);
     await page.locator('#chat-header h1').getByText(`Large ${b}`, { exact: true }).waitFor();
     const limits = await page.locator('[data-cache-pages]').evaluate(e => ({ pages: Number(e.dataset.cachePages), entries: Number(e.dataset.cacheEntries) }));
     if (limits.pages > 8 || limits.entries > 320) throw new Error(`Cache unbounded: ${JSON.stringify(limits)}`);
   }
-  await page.locator('[data-switch="large-0"]').click();
+  await navClick(page, '[data-switch="large-0"]');
   await page.locator('#draft').getAttribute('id');
   await page.waitForFunction(() => document.querySelector('#draft')?.value === 'preserved draft');
   await page.locator('#manage-button').click();
   await page.locator('[data-delete-branch]').click();
-  await page.getByRole('button', { name: '确认删除主题', exact: true }).click();
-  await page.locator('#undo').click();
+  await page.getByRole('button', { name: '确认移除主题', exact: true }).click();
+  await page.locator('.graph-recovery').getByRole('button', { name: '恢复', exact: true }).click();
+  await navClick(page, '[data-switch="large-0"]');
   await page.locator('#chat-header h1').getByText('Large 0', { exact: true }).waitFor();
-  await page.locator('#settings-button').click();
+  await navClick(page, '#settings-button');
   const downloading = page.waitForEvent('download');
   await page.getByText('流式导出 NDJSON').click();
   const download = await downloading;
@@ -178,10 +186,11 @@ try {
   if (errors.length) throw new Error(errors.join('\n'));
   if (snapshotRequests.length) throw new Error(`UI requested full snapshots: ${snapshotRequests.length}`);
   if (Math.max(...sizes) > 100000) throw new Error(`Unbounded normal response: ${Math.max(...sizes)}`);
-  console.log(`Browser: selection/expand, exact source return, partial reference, 3 protocols, stream/cancel/retry/reload, failed draft flush, token undo, 100 topics/10000 entries passed. snapshot_requests=0 max_normal_response_bytes=${Math.max(...sizes)} cache_pages<=8 cache_entries<=320 DOM_rows<=40.`);
+   console.log(`Browser: selection/expand, exact source return, partial reference, 3 protocols, stream/cancel/retry/reload, failed draft flush, independent recovery, 100 topics/10000 entries passed. snapshot_requests=0 max_normal_response_bytes=${Math.max(...sizes)} cache_pages<=8 cache_entries<=320 DOM_rows<=40.`);
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: join('test-results', 'browser-smoke.png'), fullPage: true });
   await verifyUX(browser, url);
+  await verifyGraph(browser, url);
 } finally {
   await browser.close();
 }

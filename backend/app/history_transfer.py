@@ -224,6 +224,9 @@ async def import_history(request, uid, revision, database):
                     if changed != 1:
                         error(409, "工作区已更新，导入未应用。")
                     for name in (
+                        "graph_positions",
+                        "graph_contacts",
+                        "graph_removals",
                         "history_entries",
                         "history_branches",
                         "history_sessions",
@@ -254,6 +257,7 @@ async def import_history(request, uid, revision, database):
                         .where(heads.c.user_id == uid)
                         .values(active=active)
                     )
+                    # Missing positions are allocated by the bounded forest projection.
             finally:
                 writer.execute(text("DETACH DATABASE incoming"))
                 writer.commit()

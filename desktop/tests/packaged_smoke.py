@@ -4,6 +4,7 @@ Run: py desktop/tests/packaged_smoke.py --parent <existing temporary directory>
 Requires playwright, Pillow and pywin32 in the test interpreter.
 """
 import argparse
+import re
 import base64
 import ctypes
 import hashlib
@@ -170,8 +171,8 @@ def main():
                 browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{debug_port}")
                 context = browser.contexts[0]
                 page = context.pages[0]
-                page.wait_for_url("http://127.0.0.1:*/", timeout=30000)
-                page.locator("#create").wait_for()
+                page.wait_for_url(re.compile(r"http://127\.0\.0\.1:\d+/.*"), timeout=30000)
+                page.get_by_role("button", name="菜单", exact=True).wait_for()
                 page.wait_for_load_state("networkidle")
                 ready = page.evaluate("fetch('/readyz').then(r=>r.json())")
                 assert ready["status"] == "ready"
@@ -179,10 +180,11 @@ def main():
                 assert cookie["secure"] and cookie["httpOnly"] and cookie["expires"] > time.time()
                 if cycle == 0:
                     page.screenshot(path=str(directory / "homepage.png"))
-                    page.locator("#create").click()
+                    page.locator(".graph-tools").get_by_role("button", name="新的学习问题", exact=True).click()
                     page.locator("#chat-header h1").filter(has_text="新的学习问题").wait_for()
                     # Use the visible settings form, not a synthetic API save.
-                    page.locator("#settings-button").click()
+                    page.get_by_role("button", name="菜单", exact=True).click()
+                    page.get_by_role("button", name="设置与数据", exact=True).click()
                     # Persistence-only: a public IP literal avoids live provider DNS.
                     # No connection test or generation request is sent to this address.
                     page.locator("#ai-base-url").fill("https://93.184.216.34/v1")
@@ -211,6 +213,7 @@ def main():
                     page.reload(wait_until="networkidle")
                 else:
                     assert cookie["value"] == previous_cookie, "Session changed across app restart"
+                    page.locator(".graph-tools").get_by_role("button", name="继续对话", exact=True).click()
                     page.locator("#chat-header h1").filter(has_text="新的学习问题").wait_for()
                     assert page.locator("#draft").input_value() == "打包持久化 😀 draft"
                 workspace = page.evaluate("fetch('/api/workspace').then(r=>r.json())")
@@ -223,7 +226,7 @@ def main():
                     assert workspace == previous_workspace
                     assert blob == previous_key
                 with sqlite3.connect(appdata / "zhishu.db") as db:
-                    assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0004_delete_tombstones"
+                    assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0006_forest_layout"
                     assert db.execute("PRAGMA quick_check").fetchone()[0] == "ok"
                     row = db.execute("SELECT user_id,version,encrypted_key,nonce,auth_tag FROM user_ai_configs").fetchone()
                     plaintext = AESGCM(key).decrypt(base64.b64decode(row[3]), base64.b64decode(row[2]) + base64.b64decode(row[4]), f"{row[0]}:{row[1]}".encode())
@@ -231,7 +234,9 @@ def main():
                     assert db.execute("SELECT count(*) FROM users").fetchone()[0] == 1
                     assert db.execute("SELECT count(*) FROM auth_sessions").fetchone()[0] == 1
                 page.screenshot(path=str(directory / f"webview-{cycle}.png"))
+                page.get_by_role("button", name="菜单", exact=True).click()
                 assert page.locator('#tree').evaluate("el => el.clientHeight >= el.querySelector('.topic-row').getBoundingClientRect().height"), "First topic is clipped at native DPI"
+                page.get_by_role("button", name="收起主题导航", exact=True).click()
                 hwnd = window_for(process.pid)
                 assert hwnd, "No visible native GUI window"
                 modules = native_modules(process.pid)

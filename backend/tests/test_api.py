@@ -59,3 +59,28 @@ def test_model_form_validation_and_connection_key_scope(monkeypatch):
             assert client.post('/api/ai/config', json=body | dict(apiKey='') | change).status_code == 400
         public = client.get('/api/ai/config').json()
         assert public['model'] == 'other' and 'secret' not in str(public)
+
+
+def test_graph_http_strict_owner_idempotency_and_recovery():
+    with TestClient(app) as client, TestClient(app) as other:
+        view = client.get('/api/workspace/view').json()
+        created = client.post('/api/workspace/actions', json={
+            'type': 'create', 'title': 'native graph', 'revision': view['revision']}).json()
+        bid = created['active']
+        graph = client.get('/api/graph', params={'focus': bid}).json()
+        node = next(n for n in graph['nodes'] if n['id'] == bid)
+        assert other.get('/api/graph', params={'focus': bid}).status_code == 404
+        for invalid in [{'extra': 1}, {'x': 1_000_001}, {'version': True}]:
+            assert client.post('/api/graph/positions', json={
+                'branchId': bid, 'x': 10, 'y': 20, 'version': 0, **invalid}).status_code == 400
+        assert client.post('/api/graph/contacts', json={'source': bid, 'targets': [bid]}).status_code == 400
+        assert client.post('/api/graph/contacts', json={'source': bid, 'targets': ['x'] * 21}).status_code == 400
+        payload = {'operationId': 'http-remove', 'targets': [{'id': bid, 'revision': node['revision']}]}
+        result = client.post('/api/graph/removals', json=payload)
+        assert result.status_code == 200
+        assert client.post('/api/graph/removals', json=payload).json()['revision'] == result.json()['revision']
+        assert other.get('/api/graph/removals/http-remove').status_code == 404
+        assert other.post('/api/graph/removals/http-remove/restore', json={}).status_code == 404
+        assert client.get('/api/graph/removals').json()['count'] == 1
+        assert client.post('/api/graph/removals/http-remove/restore', json={}).status_code == 200
+        assert client.get('/api/branches/' + bid).status_code == 200

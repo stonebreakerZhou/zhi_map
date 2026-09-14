@@ -51,7 +51,7 @@ def test_legacy_migration_retains_original_and_restart(storage):
         assert Repository(db, "a").snapshot()["state"] == state
         assert (
             db.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0004_delete_tombstones"
+            == "0006_forest_layout"
         )
 
 

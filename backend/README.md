@@ -15,6 +15,16 @@ copy .env.example .env
 
 ## Protocols and HTTP contract
 
+### Native graph and independent recovery
+
+`GET /api/graph` is an owner-scoped SQL viewport/focus/search/cursor projection (200 objects, 400 typed edges, 256 KiB). At most twelve nodes carry two 120-code-point excerpts each with local/source UTF-16 locations. It never reads a full workspace snapshot.
+
+`POST /api/graph/positions` validates finite world coordinates within ±1,000,000 and an independent layout version. `POST /api/graph/contacts` atomically validates an explicit source and 1–20 targets; contacts are undirected, distinct from references and excluded from context. `unlink` removes only that contact.
+
+`POST /api/graph/removals` accepts an operation ID and 1–20 branch IDs with expected revisions. Operation-owned disk tombstones are limited to 8 MiB and 600 seconds. Children detach with source origin retained. `GET /api/graph/removals` returns 40 receipts per page and a count; `/{operationId}` looks up a receipt; `POST /{operationId}/restore` restores only that operation. Changed children or missing parents cause conflict without consuming the receipt; explicit `asRoot` omits old relation restoration. `GET /api/graph/root/{branchId}` walks at most 128 ancestors.
+
+Schema is additive revision `0005_constellation`. Legacy undo remains separate. NDJSON replacement clears graph records; current exports do not contain them. Initial layout uses insertion order; spatial filtering is SQL expression-based, not spatial-indexed. The complete run/removal race and contact-dependency compensation matrices still need additional coverage.
+
 `app/providers` independently maps OpenAI chat-completions (Bearer), Anthropic Messages (`x-api-key`, version header, top-level system prompt), and Gemini `streamGenerateContent` (`x-goog-api-key`, `systemInstruction`, model roles). Metadata and reranking consume the same streaming gateway and validate structured output. No tools, images, audio, OpenAI Responses API or Gemini non-streaming endpoint are implemented. Real accounts have not been tested.
 
 - `POST /api/ai/config`: adds `provider`, `maxTokens` (1–65536), `temperature` (null or 0–1).

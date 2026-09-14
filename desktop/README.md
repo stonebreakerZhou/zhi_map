@@ -1,5 +1,9 @@
 # 知树 Windows Desktop
 
+## 本轮星空图集成状态
+
+星空图沿用 React → FastAPI → SQLite 路径，没有引入 PySide、第二后端或 MindFlow 数据库。桌面宿主继续加载同一 Web 构建，配置、身份与密钥存储机制沿用原实现；新增 schema 由 Alembic `0005_constellation` 升级。本轮已运行桌面单元回归，但未构建 ZIP／安装器，也未重新实测原生 WebView2 的右键事件顺序、最小窗口和 Windows 125%／150%／200% 缩放。旧产物不代表包含本轮改动；打包后须重新执行分发验证。
+
 这是 Windows 10/11 的可分发桌面版。开发者在仓库根目录准备好 Node.js、npm、Python 3.12+ 与 [Inno Setup](https://jrsoftware.org/isdl.php) 6.3+ 后，运行：
 
 ```powershell

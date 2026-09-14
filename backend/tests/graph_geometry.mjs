@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
+
+const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+const url = js => `data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;
+const gestures = url(compile(await readFile('apps/web/src/graph/gestures.ts', 'utf8')));
+const geometry = compile(await readFile('apps/web/src/graph/geometry.ts', 'utf8')).replace('./gestures.js', gestures);
+const { detail, allocate } = await import(url(geometry));
+assert.equal(detail(250, 150, 1), 1);
+assert.equal(detail(265, 160, 1), 2);
+assert.equal(detail(245, 145, 2), 2);
+assert.equal(detail(239, 145, 2), 1);
+assert.equal(detail(119, 44, 1), 0);
+const nodes = Array.from({ length: 200 }, (_, i) => ({ id: `n${i}`, x: 200 + i%10*300, y: 100 + Math.floor(i/10)*280, previews: [{ text: '原文' }] }));
+const allocation = allocate(nodes, { x: 0, y: 0, scale: 1 }, 4000, 7000, new Map(), ['n199']);
+assert.equal(allocation.visible[0].node.id, 'n199');
+assert(allocation.visible.filter(n => n.level === 2).length <= 12);
+assert(allocation.visible.filter(n => n.level > 0).length <= 59);
+const collision = allocate([{ ...nodes[0], id: 'a' }, { ...nodes[0], id: 'b' }], { x: 0, y: 0, scale: 1 }, 1000, 800, new Map(), ['b']);
+assert.equal(collision.visible[0].node.id, 'b');
+assert.equal(collision.crowded[0].id, 'a');
+console.log('Graph geometry: projected bounds, 10% hysteresis, preview/label budgets, priority and collision aggregation passed.');

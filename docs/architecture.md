@@ -2,6 +2,8 @@
 
 ## Module Boundaries
 
+The native graph reuses `history_branches` and `history_entries`. `graph.py` projects bounded nodes, typed edges and source excerpts; `graph_schema.py` contains only layout/contact/operation metadata. `removals.py` keeps operation-owned tombstones with target/dependency checks. It never restores a global workspace snapshot. `graph_routes.py` mounts these contracts into the existing FastAPI application, consumed by `apps/web/src/graph/` and the unchanged desktop hosting path.
+
 The React web client renders server-paged views and sends commands. It does not decide durable state transitions, store learning data, or retain model credentials. See the [web client](../apps/web/README.md) for component responsibilities.
 
 `backend/app/domain` owns deterministic state transitions, validation, and JavaScript-compatible UTF-16 offsets. It has no HTTP, database, or browser dependency.
@@ -12,7 +14,7 @@ FastAPI Pydantic models own the HTTP boundary. The Python API authenticates the 
 
 1. A first request creates an anonymous user and an HttpOnly, `SameSite=Lax` session cookie.
 2. The client reads revision/active metadata, then cursor pages of topics and entries. Commands include the revision and return compact affected IDs.
-3. The repository uses incremental SQL for common message/draft operations, iterates source prefixes for branching and fetches only selected reference entries. A stale workspace revision is rejected as a conflict. Undo is a bounded server-side single-use token, not a client snapshot.
+3. The repository uses incremental SQL for common message/draft operations and navigation, iterates source prefixes for branching and fetches only selected reference entries. Legacy commands check workspace revision; graph removal checks target revisions and returns a ten-minute independent operation receipt. Recovery does not invalidate unrelated drafts or restore global state; the old undo endpoint remains isolated for compatibility.
 4. AI reads at most 100 entries / 64,000 text characters from the run's branch, resolves session model configuration before the environment fallback, calls the provider server-side, then persists the answer incrementally. SSE completion returns compact metadata and never replaces the UI's other branch or dirty drafts.
 5. Small backups retain `{ schemaVersion: 2, state }`. Large backups use NDJSON with disk staging, bounded records and atomic final copy; model configuration is excluded.
 
