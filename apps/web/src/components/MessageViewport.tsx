@@ -55,6 +55,6 @@ export function MessageViewport({ app, select, jump, locate }: { app: WorkspaceC
     {app.page.items.map(entry => <Message key={entry.id} entry={entry} app={app} jump={jump} locate={locate} select={select} />)}
     {picked && <div ref={toolbar} className="selection-toolbar" role="toolbar" aria-label="选区操作" style={position} onPointerDown={e => e.preventDefault()}><Button id="expand-selection" className="primary" onClick={() => { select(picked); setPicked(undefined); }}><Icon name="expand" />展开讨论</Button><IconButton icon="copy" label="复制选中文字" onClick={async () => { try { await navigator.clipboard.writeText(picked.text); setHint('已复制选中文字'); } catch { setHint('复制失败，请使用系统复制菜单或 Ctrl / Cmd + C。'); } }} /></div>}
     {hint && <p className="selection-feedback" role="status">{hint}</p>}
-    {app.partial() && <article className="message assistant" id="stream-output" aria-live="polite">{app.partial()}</article>}
+     {app.partial() && <article className="message assistant" id="stream-output" aria-live="polite"><header>知树 · 正在生成</header><div className="message-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(app.partial()) }} /></article>}
   </div>;
 }
