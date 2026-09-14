@@ -7,11 +7,12 @@ const span = (text: string, start: number) => `<span data-source-start="${start}
 
 function inline(source: string, start: number) {
   let html = '', cursor = 0;
-  const math = /\$\$([\s\S]+?)\$\$|\$([^\n$]+?)\$/g;
+  const math = /\$\$([\s\S]+?)\$\$|\\\(([^\n]+?)\\\)|\$([^\n$]+?)\$/g;
   for (const match of source.matchAll(math)) {
     const index = match.index!;
     html += text(source.slice(cursor, index), start + cursor);
-    html += `<span class="math" data-math-start="${start + index}" data-math-end="${start + index + match[0].length}">${katex.renderToString(match[1] ?? match[2]!, { displayMode: Boolean(match[1]), throwOnError: false, trust: false })}</span>`;
+    const value = match[1] ?? match[2] ?? match[3]!;
+    html += `<span class="math" data-math-start="${start + index}" data-math-end="${start + index + match[0].length}">${katex.renderToString(value, { displayMode: Boolean(match[1]), throwOnError: false, trust: false })}</span>`;
     cursor = index + match[0].length;
   }
   return html + text(source.slice(cursor), start + cursor);
@@ -31,8 +32,15 @@ function text(source: string, start: number) {
 }
 
 export function renderMarkdown(source: string) {
+  const blocks: string[] = [];
+  const prepared = source.replace(/(^|\n)\s*(?:\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\])\s*(?=\n|$)/g, (_match, prefix: string, dollars?: string, brackets?: string) => {
+    const index = blocks.length;
+    const value = dollars ?? brackets ?? '';
+    blocks.push(`<span class="math math-display" data-math-start="0" data-math-end="0">${katex.renderToString(value, { displayMode: true, throwOnError: false, trust: false })}</span>`);
+    return `${prefix}MATHBLOCKTOKEN${index}\n`;
+  });
   let offset = 0;
-  const html = source.split(/(?<=\n)/).map((line) => {
+  const html = prepared.split(/(?<=\n)/).map((line) => {
     const start = offset; offset += line.length;
     const trimmed = line.replace(/\n$/, '');
     const heading = /^(#{1,3})\s+/.exec(trimmed);
@@ -41,5 +49,7 @@ export function renderMarkdown(source: string) {
     if (/^>\s?/.test(trimmed)) { const prefix = trimmed.match(/^>\s?/)![0]; return `<blockquote>${inline(trimmed.slice(prefix.length), start + prefix.length)}</blockquote>`; }
     return trimmed ? `<p>${inline(trimmed, start)}</p>` : '';
   }).join('');
-  return DOMPurify.sanitize(html, { ADD_ATTR: ['data-source-start', 'data-math-start', 'data-math-end', 'target'], FORBID_TAGS: ['img', 'style', 'form', 'input'] });
+  let sanitized = DOMPurify.sanitize(html, { ADD_ATTR: ['data-source-start', 'data-math-start', 'data-math-end', 'target'], FORBID_TAGS: ['img', 'style', 'form', 'input'] });
+  blocks.forEach((block, index) => { sanitized = sanitized.replace(`MATHBLOCKTOKEN${index}`, block); });
+  return sanitized;
 }
