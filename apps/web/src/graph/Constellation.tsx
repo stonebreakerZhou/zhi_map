@@ -91,11 +91,11 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     const from = cameraRef.current, started = performance.now();
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { setCam(target); return; }
     const frame = (now: number) => {
-      const t = Math.min(1, (now - started) / 280);
-      // Evaluate the shared cubic-bezier(.2,.8,.2,1) by solving its x coordinate.
+      const t = Math.min(1, (now - started) / 520);
+      // Soft spring arrival — cubic-bezier(.34, 1.56, .64, 1) with a gentle overshoot.
       let low = 0, high = 1, u = t;
-      for (let i = 0; i < 10; i++) { const x = 3 * (1 - u) ** 2 * u * .2 + 3 * (1 - u) * u ** 2 * .2 + u ** 3; if (x < t) low = u; else high = u; u = (low + high) / 2; }
-      const eased = 3 * (1 - u) ** 2 * u * .8 + 3 * (1 - u) * u ** 2 + u ** 3;
+      for (let i = 0; i < 12; i++) { const x = 3 * (1 - u) ** 2 * u * .34 + 3 * (1 - u) * u ** 2 * .64 + u ** 3; if (x < t) low = u; else high = u; u = (low + high) / 2; }
+      const eased = 3 * (1 - u) ** 2 * u * 1.56 + 3 * (1 - u) * u ** 2 + u ** 3;
       setCam({ x: from.x + (target.x - from.x) * eased, y: from.y + (target.y - from.y) * eased, scale: from.scale + (target.scale - from.scale) * eased }, false);
       if (t < 1) animation.current = requestAnimationFrame(frame);
       else setCam(target);
@@ -412,6 +412,8 @@ export function Constellation({ app, children, references, modal, newTopic, rest
      <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerLeave={() => setToolsOpen(false)}>
         <div className="zoom-controls" aria-label="图谱缩放"><button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button><span>{Math.round(camera.scale * 100)}%</span><button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button></div>
         <button aria-expanded={toolsOpen} aria-controls="graph-options" onClick={() => setToolsOpen(open => !open)}>工具</button>
+        <Recovery app={app} anchor={anchor} />
+        <button id="refresh" onClick={() => void app.flush().then(() => { app.cache.clear(); return app.load(); }).catch(app.report)}>刷新</button>
         {toolsOpen && <div id="graph-options" className="graph-options">
          <button onClick={newTopic}>新的学习问题</button><button disabled={!active} onClick={() => changeView('Focus')}>聚焦当前</button>
         <button onClick={() => history.back()}>返回上次位置</button><button onClick={() => history.forward()}>前进到下次位置</button>
@@ -428,8 +430,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         <label>邻域比例<input type="range" min=".45" max=".75" step=".01" value={peek} onChange={e => setPeek(Number(e.target.value))} /></label>
         <p>空白立即拖动平移；长按 350ms 框选。标题长按连线，右键划过主题后松开移除；可恢复。正文保持原生选区。</p>
        </div>}
-      <Recovery app={app} anchor={anchor} />
-    </div>
+     </div>
     <div ref={host} className={`constellation view-${view.toLowerCase()}`} data-view={view} data-node-count={drawn.length} data-edge-count={projection?.edges.length ?? 0}
       onPointerDown={down} onPointerMove={hover} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={() => { if (gestureRef.current) cancel(); }}
        onPointerLeave={() => { clearTimeout(hoverTimer.current); clearTimeout(autoTimer.current); hoverCandidate.current = undefined; setHoveredNode(undefined); setCursorHint(undefined); }}
@@ -471,7 +472,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
       {allocation.crowded.length > 0 && <div className="graph-crowded" data-graph-protected><button onClick={() => setCrowdedOpen(!crowdedOpen)}>重叠区域 · {allocation.crowded.length} 个主题</button>{crowdedOpen && <div>{allocation.crowded.slice(0, 40).map(n => <button key={n.id} onClick={() => { setCrowdedOpen(false); open(n.id); }}>{n.title}</button>)}</div>}</div>}
       {expanded && <div className="graph-children-panel" data-graph-protected><strong>{nodeName(expanded)} · 既有子讨论</strong><button onClick={() => setExpanded(undefined)}>关闭子讨论列表</button><p>收起祖先时保留当前活动路径与所选主题。</p><div>{projection?.nodes.filter(n => n.parent === expanded).slice(0, 40).map(n => <button key={n.id} onClick={() => open(n.id)}>{n.title}</button>)}</div>{projection?.childNextCursor != null && <button onClick={() => setChildCursor(projection.childNextCursor!)}>下一页子讨论</button>}</div>}
       {projection && projection.aggregate > 0 && <button className="graph-aggregate" data-graph-protected onClick={() => document.getElementById('nav-toggle')?.click()}>其余 {projection.aggregate} 个主题 · 搜索 / 分页</button>}
-      <div className="graph-query" data-graph-protected><label>定位主题<input aria-label="图中搜索主题" value={search} maxLength={120} onChange={e => { setSearch(e.target.value); setCursor(-1); }} /></label>
+      <div className="graph-query" data-graph-protected><input aria-label="图中搜索主题" placeholder="查找" value={search} maxLength={120} onChange={e => { setSearch(e.target.value); setCursor(-1); }} />
         {search && <div className="graph-search-results">{drawn.filter(n => n.title.includes(search)).slice(0, 40).map(n => <button key={n.id} onClick={() => { setSearch(''); open(n.id); }}>{n.title}</button>)}</div>}
         {projection?.pathContinuation && <button onClick={() => open(projection.pathContinuation!)}>主路径已截断 · 继续上溯</button>}
         {projection?.childNextCursor != null && <button onClick={() => setChildCursor(projection.childNextCursor!)}>继续加载子讨论</button>}
@@ -479,8 +480,8 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         {cursor >= 0 && <button onClick={() => setCursor(-1)}>首窗口</button>}
         {loading && <span role="status">正在加载邻域…</span>}{error && <span role="alert">{error}<button onClick={() => setRefresh(n => n + 1)}>重试</button></span>}
       </div>
-        <div ref={capsule} className="graph-capsule" data-view-label={view === 'Focus' ? '专注对话' : view === 'Peek' ? '邻域预览' : '主题概览'} onClick={e => { if (suppress.current) { suppress.current = false; e.preventDefault(); return; } if (view === 'Overview' && app.branch && e.target === e.currentTarget) open(app.branch.id); }} style={(app.branch && active ? { left: `calc(var(--cx, 0px) + ${active.x - focusWidth / 2} * var(--scale, 1) * 1px)`, top: `calc(var(--cy, 0px) + ${active.y - focusHeight / 2} * var(--scale, 1) * 1px)`, width: `calc(${focusWidth}px * var(--scale, 1))`, height: `calc(${focusHeight}px * var(--scale, 1))` } : { left: 24, top: 80, width: size.width - 48, height: size.height - 104 }) as CSSProperties} aria-label="对话胶囊">
-         {app.branch && <div className="capsule-summary" data-graph-protected aria-hidden={view === 'Focus'}><h2>{app.branch.title} · 当前</h2>{!titles && active?.previews.map(p => <p key={p.entryId}>{p.text}</p>)}{active && active.childrenCount > 0 && <button onClick={e => { e.stopPropagation(); setExpanded(active.id); setChildCursor(-1); }}>展开子讨论（{active.childrenCount}）</button>}</div>}
+        <div ref={capsule} className="graph-capsule" data-view-label={view === 'Focus' ? '专注对话' : view === 'Peek' ? '领域预览' : '主题概览'} onClick={e => { if (suppress.current) { suppress.current = false; e.preventDefault(); return; } const target = e.target instanceof Element ? e.target : null; if (view !== 'Focus' && app.branch && !target?.closest('button, input, textarea, select, a, [data-graph-interactive], .message-text')) open(app.branch.id); }} style={(app.branch && active ? { left: `calc(var(--cx, 0px) + ${active.x - focusWidth / 2} * var(--scale, 1) * 1px)`, top: `calc(var(--cy, 0px) + ${active.y - focusHeight / 2} * var(--scale, 1) * 1px)`, width: `calc(${focusWidth}px * var(--scale, 1))`, height: `calc(${focusHeight}px * var(--scale, 1))` } : { left: 24, top: 80, width: size.width - 48, height: size.height - 104 }) as CSSProperties} aria-label="对话胶囊">
+          {app.branch && <div className="capsule-summary" data-graph-protected role="button" tabIndex={view === 'Overview' ? 0 : -1} aria-label={`打开主题 ${app.branch.title}`} aria-hidden={view === 'Focus'} onClick={() => { if (view === 'Overview') open(app.branch!.id); }} onKeyDown={e => { if (view === 'Overview' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(app.branch!.id); } }}><h2>{app.branch.title} · 当前</h2>{!titles && active?.previews.map(p => <p key={p.entryId}>{p.text}</p>)}</div>}
         {children}
       </div>
        {gesture && gesture.phase !== 'pressCandidate' && <div className="gesture-status" data-graph-protected role="status">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { WorkspaceController } from '../controller.js';
 import { ConfirmDialog, Dialog } from '../components/Dialog.js';
 import { graphApi, type Point, type Receipt } from './api.js';
@@ -37,12 +38,12 @@ export function Recovery({ app, anchor }: { app: WorkspaceController; anchor?: P
       if (id) void app.action({ type: 'switch', branchId: id }).then(() => setRestored(undefined)).catch(app.report);
     }}>打开已恢复主题</button>}
     {app.unknownRemoval && <button disabled={app.removalBusy} onClick={() => void app.reconcileRemoval()}>核实移除</button>}
-    {current && <div ref={bubble} className="graph-recovery" style={{ left: point.x, top: point.y }} role="status">
+    {current && createPortal(<div ref={bubble} className="graph-recovery" style={{ left: point.x, top: point.y }} role="status">
       <span>已移除「{current.targets.map(t => t.title).join('、')}」</span>
       <button disabled={busy} onClick={() => void restore(current)}>恢复</button>
       <button aria-label="关闭恢复浮窗" onClick={() => setDismissed(current.operationId)}>关闭</button>
       {error && <p role="alert">{error}</p>}
-    </div>}
+    </div>, document.body)}
     {open && <Dialog title="最近移除" close={() => setOpen(false)} locked={busy}>
       <p>服务器保留十分钟；恢复不会切换当前讨论。无关草稿与问答不影响恢复。</p>
       {error && <p role="alert">{error}<button onClick={() => void refresh()}>重试</button></p>}

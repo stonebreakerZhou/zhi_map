@@ -8,7 +8,7 @@ export function Dialog({ title, close, children, confirm, label = '保存', disa
   const titleId = useId(), formId = useId(), guard = useRef(false);
   const [discard, setDiscard] = useState(false);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
-  useEffect(() => { const previous = document.activeElement as HTMLElement | null; const dialog = ref.current!; dialog.showModal(); dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus(); return () => { dialog.close(); previous?.focus(); }; }, []);
+  useEffect(() => { const previous = document.activeElement as HTMLElement | null; const dialog = ref.current!; const previousOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; dialog.showModal(); dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus(); return () => { dialog.close(); document.body.style.overflow = previousOverflow; previous?.focus(); }; }, []);
   const requestClose = () => { if (busy || locked) return; if (dirty) setDiscard(true); else close(); };
   const submit = async () => { if (guard.current || disabled) return; guard.current = true; setBusy(true); try { await confirm?.(); close(); } catch (e) { setError((e as Error).message); } finally { guard.current = false; setBusy(false); } };
   return <NestedDialog.Provider value={true}><dialog id={nested ? undefined : 'modal'} ref={ref} aria-labelledby={titleId} onCancel={e => { e.preventDefault(); e.stopPropagation(); requestClose(); }}>

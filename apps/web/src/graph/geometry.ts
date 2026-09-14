@@ -12,19 +12,18 @@ export function detail(width: number, height: number, previous: Detail): Detail 
 export function allocate(nodes: GraphNode[], camera: Camera, width: number, height: number,
   previous: Map<string, Detail>, priority: string[]) {
   const boxes: Box[] = [], visible: { node: GraphNode; level: Detail }[] = [], crowded: GraphNode[] = [];
-  let previews = 0, labels = 0;
+  let previews = 0;
   const rank = (id: string) => { const i = priority.indexOf(id); return i < 0 ? priority.length : i; };
   for (const node of [...nodes].sort((a, b) => rank(a.id) - rank(b.id))) {
     const p = screen(node, camera);
     if (p.x < 22 || p.x > width - 22 || p.y < 70 || p.y > height - 22) continue;
-    let level = detail(360 * camera.scale, 240 * camera.scale, previous.get(node.id) ?? 0);
+    // Keep every visible node identifiable while zoomed out; zoom changes preview detail, not identity.
+    let level = Math.max(1, detail(360 * camera.scale, 240 * camera.scale, previous.get(node.id) ?? 0)) as Detail;
     if (level === 2 && (previews >= 12 || !node.previews.length)) level = 1;
-    if (labels >= 59) level = 0;
     const box = { id: node.id, left: p.x - 110, right: p.x + 150, top: p.y - 24, bottom: p.y + (level === 2 ? 210 : 24) };
     if (boxes.some(b => intersects(b, box))) { crowded.push(node); continue; }
     boxes.push(box); previous.set(node.id, level);
     visible.push({ node, level });
-    if (level > 0) labels++;
     if (level === 2) previews++;
   }
   return { visible, crowded };
