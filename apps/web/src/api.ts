@@ -21,9 +21,9 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   view: () => request<Compact>('/api/workspace/view'),
-  branch: (id: string) => request<BranchMeta>(`/api/branches/${encodeURIComponent(id)}`),
+  branch: (id: string, signal?: AbortSignal) => request<BranchMeta>(`/api/branches/${encodeURIComponent(id)}`, signal ? { signal } : undefined),
   topics: (cursor = -1, search = '') => request<Page<TopicMeta>>(`/api/topics?limit=40&cursor=${cursor}&search=${encodeURIComponent(search)}`),
-  entries: (id: string, cursor = -1, anchor = '', before = '') => request<Page<Entry>>(`/api/branches/${encodeURIComponent(id)}/entries?limit=40&cursor=${cursor}&anchor=${encodeURIComponent(anchor)}&before=${encodeURIComponent(before)}`),
+  entries: (id: string, cursor = -1, anchor = '', before = '', signal?: AbortSignal) => request<Page<Entry>>(`/api/branches/${encodeURIComponent(id)}/entries?limit=40&cursor=${cursor}&anchor=${encodeURIComponent(anchor)}&before=${encodeURIComponent(before)}`, signal ? { signal } : undefined),
   status: () => request<{ mode: string; model: string | null }>('/api/status'),
   aiConfig: () => request<AiConfig>('/api/ai/config'),
   saveAiConfig: (body: { baseUrl: string; model: string; apiKey: string; timeoutMs?: number; provider?: string; maxTokens?: number; temperature?: number | null }) => request<AiConfig>('/api/ai/config', { method: 'POST', body: JSON.stringify(body) }),

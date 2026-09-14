@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import type { WorkspaceController } from '../controller.js';
 import { Dialog, ConfirmDialog } from '../components/Dialog.js';
 import { graphApi, type GraphEdge, type GraphNode, type Point, type Projection } from './api.js';
-import { advance, begin, intersects, rectangle, screen, world, zoomAt, type Box, type Camera, type Gesture } from './gestures.js';
+import { advance, begin, distance, intersects, rectangle, screen, world, zoomAt, type Box, type Camera, type Gesture } from './gestures.js';
 import { Recovery } from './Recovery.js';
 import { allocate, type Detail } from './geometry.js';
 import { readSelection } from '../selection.js';
@@ -46,6 +46,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const [removeIds, setRemoveIds] = useState<string[]>(), [menu, setMenu] = useState<{ id?: string; point: Point }>();
   const [anchor, setAnchor] = useState<Point>(), [busy, setBusy] = useState(false);
   const pressed = useRef(false), composing = useRef(false), typed = useRef(0), hoverTimer = useRef(0), autoTimer = useRef(0), holdTimer = useRef(0), hoverCandidate = useRef<string | undefined>(undefined);
+  const panRef = useRef<{ pointerId: number; origin: Point; camera: Camera; moved: boolean } | undefined>(undefined);
   const suppress = useRef(false), lastActive = useRef<string | undefined>(undefined), autoRef = useRef({ modal, locked, automatic, busy });
   const branchBefore = useRef(app.branch?.id);
   const historyBranch = useRef<string | undefined>(undefined);
@@ -221,6 +222,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     const g = gestureRef.current; gestureRef.current = undefined; setGesture(undefined);
     if (g && host.current?.hasPointerCapture(g.pointerId)) host.current.releasePointerCapture(g.pointerId);
     pressed.current = false;
+    panRef.current = undefined;
     pinch.current = undefined; touches.current.clear();
   };
   useEffect(() => {
@@ -250,13 +252,23 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     }
   };
   const down = (e: ReactPointerEvent<HTMLDivElement>) => {
-     clearTimeout(hoverTimer.current); clearTimeout(autoTimer.current); setToolsOpen(false);
+    clearTimeout(hoverTimer.current); clearTimeout(autoTimer.current); setToolsOpen(false);
     if (menu && !(e.target instanceof Element && e.target.closest('.graph-context'))) setMenu(undefined);
     if (expanded && !(e.target instanceof Element && e.target.closest('.graph-children-panel'))) setExpanded(undefined);
     if (crowdedOpen && !(e.target instanceof Element && e.target.closest('.graph-crowded'))) setCrowdedOpen(false);
     pressed.current = true;
     cancelAnimationFrame(animation.current);
-    if (protectedElement(e.target) || (e.button !== 0 && e.button !== 2) || busy || app.removalBusy) return;
+    const capsuleTarget = e.target instanceof Element && e.target.closest('.graph-capsule, .graph-preview-capsule');
+    const interactiveTarget = e.target instanceof Element && Boolean(e.target.closest('button, input, textarea, select, a, [data-graph-interactive], .message-text, p, h1, h2, h3, blockquote, pre, code'));
+    const canvasPanTarget = !interactiveTarget && (!protectedElement(e.target) || Boolean(capsuleTarget));
+    const protectedTarget = protectedElement(e.target) && !canvasPanTarget;
+    if (protectedTarget || (e.button !== 0 && e.button !== 2) || busy || app.removalBusy) return;
+    if (canvasPanTarget) {
+      e.preventDefault();
+      panRef.current = { pointerId: e.pointerId, origin: graphPoint(e), camera: { ...cameraRef.current }, moved: false };
+      host.current?.setPointerCapture(e.pointerId);
+      return;
+    }
     if (e.pointerType === 'touch') {
       touches.current.set(e.pointerId, graphPoint(e));
       if (touches.current.size === 2) {
@@ -287,6 +299,14 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         const c = zoomAt(p.camera, p.center, Math.hypot(a.x-b.x, a.y-b.y) / p.distance);
         setCam({ ...c, x: c.x + (a.x+b.x)/2 - p.center.x, y: c.y + (a.y+b.y)/2 - p.center.y }, false);
       }
+      return;
+    }
+    if (panRef.current?.pointerId === e.pointerId) {
+      const pan = panRef.current;
+      const point = graphPoint(e);
+      pan.moved = pan.moved || distance(pan.origin, point) >= 8;
+      const next = { ...pan.camera, x: pan.camera.x + point.x - pan.origin.x, y: pan.camera.y + point.y - pan.origin.y };
+      setCam(next, false);
       return;
     }
     if (view === 'Overview' && !protectedElement(e.target)) {
@@ -330,6 +350,14 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     catch (e) { app.report(e); setError(e instanceof Error ? e.message : String(e)); }
   };
   const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId === e.pointerId) {
+      if (panRef.current.moved) suppress.current = true;
+      setCamera(cameraRef.current);
+      if (host.current?.hasPointerCapture(e.pointerId)) host.current.releasePointerCapture(e.pointerId);
+      panRef.current = undefined;
+      pressed.current = false;
+      return;
+    }
     if (pinch.current) { const ids = [...touches.current.keys()]; cancel(); for (const id of ids) if (host.current?.hasPointerCapture(id)) host.current.releasePointerCapture(id); setCamera(cameraRef.current); return; }
     touches.current.delete(e.pointerId);
     pressed.current = false; const g = gestureRef.current;
@@ -381,7 +409,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const selectionBox = gesture?.phase === 'lasso' ? rectangle(gesture.origin, gesture.point) : undefined;
 
   return <>
-     <div className={`graph-tools ${hoveredNode ? 'is-previewing' : ''}`} data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerLeave={() => setToolsOpen(false)}>
+     <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerLeave={() => setToolsOpen(false)}>
         <div className="zoom-controls" aria-label="图谱缩放"><button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button><span>{Math.round(camera.scale * 100)}%</span><button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button></div>
         <button aria-expanded={toolsOpen} aria-controls="graph-options" onClick={() => setToolsOpen(open => !open)}>工具</button>
         {toolsOpen && <div id="graph-options" className="graph-options">
@@ -419,11 +447,11 @@ export function Constellation({ app, children, references, modal, newTopic, rest
           if (n.id === app.branch?.id) return null;
           const p = positions.get(n.id)!;
           const move = gesture?.phase === 'movePreview' && gesture.source === n.id ? { x: gesture.point.x - gesture.origin.x, y: gesture.point.y - gesture.origin.y } : { x: 0, y: 0 };
-          const preview = !titles && level === 2;
+           const nodePreview = !titles && level === 2;
           const label = level >= 1;
           const preselected = selectionBox && gesture?.boxes.some(b => b.id === n.id && intersects(b, selectionBox));
            return <div key={n.id} data-hover-node={n.id} className={`graph-node ${selected.includes(n.id) || preselected ? 'selected' : ''} ${gesture?.target === n.id ? 'gesture-target' : ''} ${n.id === app.branch?.id ? 'active' : ''} ${hoveredNode === n.id ? 'hovered' : ''}`}
-            style={{ left: `calc(var(--cx, 0px) + ${n.x} * var(--scale, 1) * 1px + ${move.x}px)`, top: `calc(var(--cy, 0px) + ${n.y} * var(--scale, 1) * 1px + ${move.y}px)` }}>
+             style={{ left: `calc(var(--cx, 0px) + ${n.x} * var(--scale, 1) * 1px + ${move.x}px)`, top: `calc(var(--cy, 0px) + ${n.y} * var(--scale, 1) * 1px + ${move.y}px)` }}>
             <button data-graph-node={n.id} className="graph-node-header" tabIndex={index === keyboardNode ? 0 : -1} aria-label={`打开主题 ${n.title}`} title={n.title} onClick={() => open(n.id)} onFocus={() => setKeyboardNode(index)} onKeyDown={e => {
               if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
               e.preventDefault();
@@ -435,8 +463,8 @@ export function Constellation({ app, children, references, modal, newTopic, rest
             </button>
              {label && <button className="graph-connector" data-graph-node={n.id} data-connector aria-label={`关联 ${n.title}`} onClick={() => { if (!suppress.current) { setSelected([n.id]); setSelectMode(true); } }}>○</button>}
             {label && n.childrenCount > 0 && <button data-graph-protected aria-label={`${collapsed.includes(n.id) ? '展开' : '收起'}子讨论 ${n.title}`} onClick={() => { setCollapsed(s => s.includes(n.id) ? s.filter(id => id !== n.id) : [...s, n.id]); setExpanded(n.id); setChildCursor(-1); }}>{collapsed.includes(n.id) ? '+' : '−'} {n.childrenCount}</button>}
-             {preview && <div className="graph-preview" data-graph-protected><small>原文摘录</small>{n.previews.map(e => <p key={e.entryId}>{e.text}</p>)}</div>}
-             {hoveredNode === n.id && view === 'Overview' && <div className="graph-hover-summary" aria-hidden="true"><small>{n.kind === 'root' ? '根主题' : '子讨论'} · 点击卡片打开</small><strong>{n.title}</strong>{n.previews.slice(0, 1).map(e => <p key={e.entryId}>{e.text}</p>)}</div>}
+              {nodePreview && <div className="graph-preview" data-graph-protected><small>原文摘录</small>{n.previews.map(e => <p key={e.entryId}>{e.text}</p>)}</div>}
+              {hoveredNode === n.id && view === 'Overview' && <div className="graph-hover-summary" aria-hidden="true"><small>{n.kind === 'root' ? '主线节点' : '子讨论'} · 点击进入专注视图</small><strong>{n.title}</strong>{n.previews.slice(0, 1).map(e => <p key={e.entryId}>{e.text}</p>)}</div>}
            </div>;
         })}
       </div>
@@ -451,7 +479,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         {cursor >= 0 && <button onClick={() => setCursor(-1)}>首窗口</button>}
         {loading && <span role="status">正在加载邻域…</span>}{error && <span role="alert">{error}<button onClick={() => setRefresh(n => n + 1)}>重试</button></span>}
       </div>
-       <div ref={capsule} className="graph-capsule" data-view-label={view === 'Focus' ? '专注对话' : view === 'Peek' ? '邻域预览' : '主题概览'} onClick={() => { if (view === 'Overview' && app.branch) open(app.branch.id); }} style={app.branch && active ? { left: `calc(var(--cx, 0px) + ${active.x - focusWidth / 2} * var(--scale, 1) * 1px)`, top: `calc(var(--cy, 0px) + ${active.y - focusHeight / 2} * var(--scale, 1) * 1px)`, width: `calc(${focusWidth}px * var(--scale, 1))`, height: `calc(${focusHeight}px * var(--scale, 1))` } : { left: 24, top: 80, width: size.width - 48, height: size.height - 104 }} aria-label="对话胶囊">
+        <div ref={capsule} className="graph-capsule" data-view-label={view === 'Focus' ? '专注对话' : view === 'Peek' ? '邻域预览' : '主题概览'} onClick={e => { if (suppress.current) { suppress.current = false; e.preventDefault(); return; } if (view === 'Overview' && app.branch && e.target === e.currentTarget) open(app.branch.id); }} style={(app.branch && active ? { left: `calc(var(--cx, 0px) + ${active.x - focusWidth / 2} * var(--scale, 1) * 1px)`, top: `calc(var(--cy, 0px) + ${active.y - focusHeight / 2} * var(--scale, 1) * 1px)`, width: `calc(${focusWidth}px * var(--scale, 1))`, height: `calc(${focusHeight}px * var(--scale, 1))` } : { left: 24, top: 80, width: size.width - 48, height: size.height - 104 }) as CSSProperties} aria-label="对话胶囊">
          {app.branch && <div className="capsule-summary" data-graph-protected aria-hidden={view === 'Focus'}><h2>{app.branch.title} · 当前</h2>{!titles && active?.previews.map(p => <p key={p.entryId}>{p.text}</p>)}{active && active.childrenCount > 0 && <button onClick={e => { e.stopPropagation(); setExpanded(active.id); setChildCursor(-1); }}>展开子讨论（{active.childrenCount}）</button>}</div>}
         {children}
       </div>
