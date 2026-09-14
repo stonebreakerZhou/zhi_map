@@ -61,6 +61,32 @@ def test_model_form_validation_and_connection_key_scope(monkeypatch):
         assert public['model'] == 'other' and 'secret' not in str(public)
 
 
+def test_deepseek_fake_ip_save_and_revalidation(monkeypatch):
+    import socket
+    from app import services
+    monkeypatch.setattr(services.settings, 'ai_fake_ip_hosts', 'api.deepseek.com')
+    monkeypatch.setattr(services.settings, 'ai_allow_private_hosts', False)
+    monkeypatch.setattr(services.settings, 'ai_allowed_hosts', '')
+    addresses = ['198.18.0.212', 'fdfe:dcba:9876::3f']
+    monkeypatch.setattr(services.socket, 'getaddrinfo', lambda *_: [
+        (socket.AF_INET6 if ':' in address else socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, 443))
+        for address in addresses
+    ])
+    async def complete(request):
+        assert request.base_url == 'https://api.deepseek.com/v1'
+        assert request.model == 'deepseek-flash'
+        return '连接成功'
+    monkeypatch.setattr('app.providers.complete', complete)
+    with TestClient(app) as client:
+        body = dict(baseUrl='https://api.deepseek.com/v1', model='deepseek-flash', apiKey='fake-test-key', provider='openai')
+        assert client.post('/api/ai/config', json=body).status_code == 200
+        assert client.post('/api/ai/config/test').status_code == 200
+        addresses[:] = ['127.0.0.1']
+        blocked = client.post('/api/ai/config/test')
+        assert blocked.status_code == 400 and 'requestId' in blocked.json()
+        assert client.get('/api/ai/config').json()['model'] == 'deepseek-flash'
+
+
 def test_graph_http_strict_owner_idempotency_and_recovery():
     with TestClient(app) as client, TestClient(app) as other:
         view = client.get('/api/workspace/view').json()

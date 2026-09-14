@@ -7,7 +7,7 @@ const presets = [
   { name: 'OpenAI', protocol: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-4.1-mini' },
   { name: 'Anthropic', protocol: 'anthropic', url: 'https://api.anthropic.com', model: 'claude-sonnet-4-5' },
   { name: 'Gemini', protocol: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash' },
-  { name: 'DeepSeek（兼容预设）', protocol: 'openai', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { name: 'DeepSeek（兼容预设）', protocol: 'openai', url: 'https://api.deepseek.com/v1', model: 'deepseek-flash' },
   { name: 'Qwen（兼容预设）', protocol: 'openai', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
   { name: 'OpenRouter（兼容预设）', protocol: 'openai', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4.1-mini' },
 ];

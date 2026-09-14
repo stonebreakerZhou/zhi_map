@@ -114,3 +114,12 @@ def test_wait_for_ready_accepts_only_a_ready_response():
         def __enter__(self): return self
         def __exit__(self, *_): pass
     launcher.wait_for_ready("http://example.test/readyz", timeout=0.1, opener=lambda *_args, **_kwargs: Response())
+
+
+@pytest.mark.parametrize("override", [None, "", "custom.example"])
+def test_desktop_fake_ip_default_preserves_explicit_policy(tmp_path, monkeypatch, override):
+    environment = {} if override is None else {"AI_FAKE_IP_HOSTS": override}
+    monkeypatch.setattr(launcher.os, "environ", environment)
+    launcher.configure_environment(tmp_path, b"x" * 32)
+    assert environment["AI_FAKE_IP_HOSTS"] == ("api.deepseek.com" if override is None else override)
+    assert "AI_ALLOW_PRIVATE_HOSTS" not in environment

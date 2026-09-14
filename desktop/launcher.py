@@ -134,6 +134,7 @@ def configure_environment(directory: Path, key: bytes) -> None:
     os.environ["DATABASE_URL"] = f"sqlite:///{(directory / 'zhishu.db').as_posix()}"
     os.environ["DATA_ENCRYPTION_KEY"] = base64.b64encode(key).decode("ascii")
     os.environ["WEB_DIST"] = str(package_root() / "apps" / "web" / "dist")
+    os.environ.setdefault("AI_FAKE_IP_HOSTS", "api.deepseek.com")
 
 
 def free_port() -> int:

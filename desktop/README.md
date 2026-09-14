@@ -48,7 +48,13 @@ JS 依赖有变动时先跑 `npm install`——`build.ps1` 只跑 `npm run build
 - 静默安装（`Zhishu-Setup-*.exe /SILENT`）后，安装目录与 `desktop\dist\Zhishu` 逐文件哈希一致——PyInstaller 漏收依赖只有启动时才会暴露，这一步能提前挡住
 - 启动装好的 `Zhishu.exe`，能出窗口并加载页面
 - 卸载后 `%LOCALAPPDATA%\Zhishu` 一个文件都没少
-- `py desktop\tests\packaged_smoke.py --parent <已存在的临时目录> --zip desktop\dist\Zhishu-windows-x64.zip`。若所在网络把域名解析进 `198.18.0.0/15`（fake-IP 代理），脚本会停在保存模型配置那一步并报 400：后端 `valid_url()` 会把这类地址判为私网。属环境问题，与发布包无关
+- `py desktop\tests\packaged_smoke.py --parent <已存在的临时目录> --zip desktop\dist\Zhishu-windows-x64.zip`。Fake-IP 网络下，测试使用的域名也必须符合下述兼容策略；未获允许的域名仍会在保存模型配置时返回 400。
+
+### Clash / Mihomo 兼容
+
+桌面版默认设置 `AI_FAKE_IP_HOSTS=api.deepseek.com`，允许该域名的 HTTPS 标准端口使用 DNS 返回的 `198.18.0.0/16`、`fdfe:dcba:9876::/64` 虚拟地址，由代理完成连接。支持范围见 [Mihomo DNS 配置示例](https://wiki.metacubex.one/config/dns/)，自定义地址段不受支持。
+
+`AI_FAKE_IP_HOSTS` 按逗号分隔的精确域名匹配；启动前显式设置可覆盖默认值，空值关闭兼容，独立后端默认关闭。保存和调用前均校验；裸 IP、其他私网地址、非标准端口、`AI_ALLOWED_HOSTS`、证书验证及禁止重定向规则保持生效。
 
 ## 构建注意事项
 

@@ -18,20 +18,24 @@ def error(status, message):
     raise ApiError(status, message)
 
 
-def private_host(host):
+FAKE_IP_NETWORKS = (ipaddress.ip_network("198.18.0.0/16"), ipaddress.ip_network("fdfe:dcba:9876::/64"))
+
+
+def private_host(host, *, allow_fake_ip=False):
     try:
-        return (
-            ipaddress.ip_address(host).is_private
-            or ipaddress.ip_address(host).is_loopback
-            or ipaddress.ip_address(host).is_link_local
-        )
+        addresses = [ipaddress.ip_address(host)]
+        # 兼容仅适用于域名解析结果，不接受直接填写虚拟 IP。
+        allow_fake_ip = False
     except ValueError:
         try:
-            return any(
-                private_host(row[4][0]) for row in socket.getaddrinfo(host, None)
-            )
-        except OSError:
+            addresses = [ipaddress.ip_address(row[4][0]) for row in socket.getaddrinfo(host, None)]
+        except (OSError, ValueError):
             return True
+    return not addresses or any(
+        (address.is_private or address.is_loopback or address.is_link_local)
+        and not (allow_fake_ip and any(address in network for network in FAKE_IP_NETWORKS))
+        for address in addresses
+    )
 
 
 def valid_url(value):
@@ -60,7 +64,9 @@ def valid_url(value):
     }
     if allowed and parsed.hostname.lower() not in allowed:
         error(400, "模型地址不在 AI_ALLOWED_HOSTS 允许列表中。")
-    if private_host(parsed.hostname) and not settings.ai_allow_private_hosts:
+    fake_ip_hosts = {x.strip().lower() for x in settings.ai_fake_ip_hosts.split(",") if x.strip()}
+    allow_fake_ip = parsed.scheme == "https" and parsed.port in (None, 443) and parsed.hostname.lower() in fake_ip_hosts
+    if private_host(parsed.hostname, allow_fake_ip=allow_fake_ip) and not settings.ai_allow_private_hosts:
         error(
             400,
             "模型地址不能指向本机、私有或链路本地网络；本地模型须由服务器显式启用 AI_ALLOW_PRIVATE_HOSTS。",

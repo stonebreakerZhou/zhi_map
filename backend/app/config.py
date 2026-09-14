@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     web_dist: str = "../apps/web/dist"
     ai_provider: str = "openai"
     ai_allow_private_hosts: bool = False
+    ai_fake_ip_hosts: str = ""
 
     def key(self):
         if self.data_encryption_key:
