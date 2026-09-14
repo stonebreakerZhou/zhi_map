@@ -11,7 +11,7 @@
 .graph-workspace .nav-backdrop { display: block; position: fixed; inset: 0; background: #20213566; z-index: 30; }
 .graph-workspace button { min-height: 40px; border-radius: 8px; }
 .graph-workspace .topbar { flex-shrink: 0; }
-.graph-tools { display: flex; align-items: center; gap: 8px; padding: 8px 16px; flex-wrap: wrap; flex-shrink: 0; border-bottom: 1px solid #deddd9; }
+.graph-tools { display: flex; align-items: center; gap: 8px; padding: 9px 16px; flex-wrap: wrap; flex-shrink: 0; border-bottom: 1px solid #deddd9; background: rgba(250,249,246,.88); backdrop-filter: blur(12px); }
 .graph-tools:focus-within { background: #fbfbf8; }
 .graph-tools button, .graph-tools summary { font-size: 14px; line-height: 22px; }
 .graph-tools .graph-new { color: var(--graph-active); font-weight: 650; }
@@ -24,7 +24,7 @@
 .graph-tools summary { padding: 8px; }
 .graph-options { position: absolute; z-index: 16; top: 100%; right: 0; width: min(360px, 90vw); max-height: 65dvh; overflow: auto; display: grid; gap: 12px; padding: 16px; background: white; border: 1px solid #85858f; border-radius: 12px; box-shadow: 0 6px 24px #25244330; }
 .graph-options label { display: flex; align-items: center; gap: 8px; }
-.constellation { position: relative; flex: 1; min-height: 0; overflow: hidden; background: radial-gradient(circle at 50% 42%, #fff 0, var(--graph-bg) 70%); touch-action: none; }
+.constellation { position: relative; flex: 1; min-height: 0; overflow: hidden; background-color: var(--graph-bg); background-image: linear-gradient(rgba(78,80,168,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(78,80,168,.055) 1px, transparent 1px), radial-gradient(circle at 50% 42%, #fff 0, var(--graph-bg) 70%); background-size: 48px 48px, 48px 48px, 100% 100%; touch-action: none; }
 .graph-edges, .graph-nodes, .gesture-overlay { position: absolute; inset: 0; pointer-events: none; }
 .graph-edge { pointer-events: stroke; cursor: pointer; }
 .graph-world-edges { transform: translate(var(--cx, 0px), var(--cy, 0px)) scale(var(--scale, 1)); }
@@ -33,7 +33,8 @@
 .graph-edge.edge-contact path { stroke-dasharray: 2 5; }
 .graph-edge .edge-hit { stroke: transparent; stroke-width: 16px; }
 .graph-node { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; display: flex; align-items: center; }
-.graph-workspace .graph-node-header { display: flex; gap: 8px; align-items: center; min-width: 44px; min-height: 44px; padding: 8px; max-width: 208px; background: #fff; border: 1px solid var(--graph-border); }
+.graph-workspace .graph-node-header { display: flex; gap: 8px; align-items: center; min-width: 44px; min-height: 44px; padding: 8px; max-width: 208px; background: rgba(255,255,255,.94); border: 1px solid var(--graph-border); transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+.graph-workspace .graph-node-header:hover { border-color: var(--graph-active); box-shadow: 0 7px 18px rgba(37,36,67,.12); }
 .graph-label { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 160px; font-size: 12px; line-height: 20px; text-align: left; }
 .graph-dot { flex: 0 0 12px; width: 12px; height: 12px; border-radius: 50%; background: #4e50a8; }
 .graph-dot.root { flex-basis: 16px; width: 16px; height: 16px; }
@@ -43,7 +44,7 @@
 .graph-preview { position: absolute; top: 100%; left: 0; width: 260px; padding: 12px; border: 1px solid #85858f; background: white; border-radius: 12px; }
 .graph-preview p, .capsule-summary p { font-size: 14px; line-height: 22px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .graph-node:has(.graph-preview) .graph-label { font-size: 16px; line-height: 24px; }
-.graph-capsule { position: absolute; z-index: 4; display: flex; flex-direction: column; border: 1px solid #c9c9c5; border-radius: 20px; background: #faf9f6; overflow: visible; pointer-events: auto; touch-action: auto; box-shadow: 0 18px 50px #2524430d; }
+.graph-capsule { position: absolute; z-index: 4; display: flex; flex-direction: column; border: 1px solid #b9b8c4; border-radius: 20px; background: rgba(250,249,246,.96); overflow: visible; pointer-events: auto; touch-action: auto; box-shadow: 0 22px 70px rgba(37,36,67,.13), 0 0 0 6px rgba(78,80,168,.045); }
 .graph-capsule::before { content: attr(data-view-label); position: absolute; top: -28px; left: 4px; color: #8c8e98; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; pointer-events: none; }
 .graph-capsule .chat { flex: none; width: var(--focus-width, 100%); height: calc(var(--focus-height, 100%) - var(--editor-height, 160px)); max-width: none; padding: 24px max(24px, calc((var(--focus-width, 100%) - 840px) / 2)); overscroll-behavior: contain; border-radius: 24px; transition: opacity 180ms ease-out; }
 .graph-capsule .message-text { font-size: 16px; line-height: 28px; }
