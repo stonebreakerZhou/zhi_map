@@ -360,13 +360,12 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const selectionBox = gesture?.phase === 'lasso' ? rectangle(gesture.origin, gesture.point) : undefined;
 
   return <>
-    <div className="graph-tools" data-graph-protected>
-      <button onClick={newTopic}>新的学习问题</button>
-      <button disabled={!app.branch} onClick={() => changeView(view === 'Focus' ? 'Peek' : 'Focus')}>{view === 'Focus' ? '查看邻域' : '继续对话'}</button>
-      <button onClick={() => changeView('Overview')}>概览</button>
-      <button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button>
-      <button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button>
-      <details><summary>比例 {Math.round(camera.scale * 100)}% · 更多</summary><div className="graph-options">
+     <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具">
+       <button className="graph-new" onClick={newTopic}>新的学习问题</button>
+       <button className="graph-primary" disabled={!app.branch} onClick={() => changeView(view === 'Focus' ? 'Peek' : 'Focus')}>{view === 'Focus' ? '查看邻域' : '继续对话'}</button>
+       <button className="graph-overview" onClick={() => changeView('Overview')}>概览</button>
+       <div className="zoom-controls" aria-label="图谱缩放"><button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button><span>{Math.round(camera.scale * 100)}%</span><button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button></div>
+       <details><summary>工具</summary><div className="graph-options">
         <button disabled={!active} onClick={() => changeView('Focus')}>聚焦当前</button>
         <button onClick={() => history.back()}>返回上次位置</button><button onClick={() => history.forward()}>前进到下次位置</button>
         <details><summary>主树路径</summary>{[...(projection?.path ?? [])].reverse().map(id => <button key={id} onClick={() => open(id)}>{nodeName(id)}</button>)}</details>
@@ -433,7 +432,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         {cursor >= 0 && <button onClick={() => setCursor(-1)}>首窗口</button>}
         {loading && <span role="status">正在加载邻域…</span>}{error && <span role="alert">{error}<button onClick={() => setRefresh(n => n + 1)}>重试</button></span>}
       </div>
-      <div ref={capsule} className="graph-capsule" style={app.branch && active ? { left: `calc(var(--cx, 0px) + ${active.x - focusWidth / 2} * var(--scale, 1) * 1px)`, top: `calc(var(--cy, 0px) + ${active.y - focusHeight / 2} * var(--scale, 1) * 1px)`, width: `calc(${focusWidth}px * var(--scale, 1))`, height: `calc(${focusHeight}px * var(--scale, 1))` } : { left: 24, top: 80, width: size.width - 48, height: size.height - 104 }} aria-label="对话胶囊">
+       <div ref={capsule} className="graph-capsule" data-view-label={view === 'Focus' ? '专注对话' : view === 'Peek' ? '邻域预览' : '主题概览'} style={app.branch && active ? { left: `calc(var(--cx, 0px) + ${active.x - focusWidth / 2} * var(--scale, 1) * 1px)`, top: `calc(var(--cy, 0px) + ${active.y - focusHeight / 2} * var(--scale, 1) * 1px)`, width: `calc(${focusWidth}px * var(--scale, 1))`, height: `calc(${focusHeight}px * var(--scale, 1))` } : { left: 24, top: 80, width: size.width - 48, height: size.height - 104 }} aria-label="对话胶囊">
         {app.branch && <div className="capsule-summary" data-graph-protected aria-hidden={view === 'Focus'}><h2>{app.branch.title} · 当前</h2>{!titles && active?.previews.map(p => <p key={p.entryId}>{p.text}</p>)}<button onClick={() => changeView('Focus')}>打开完整对话</button>{active && active.childrenCount > 0 && <button onClick={() => { setExpanded(active.id); setChildCursor(-1); }}>展开子讨论（{active.childrenCount}）</button>}</div>}
         {children}
       </div>
