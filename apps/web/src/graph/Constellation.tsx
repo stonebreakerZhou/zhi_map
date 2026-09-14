@@ -32,6 +32,9 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const [selected, setSelected] = useState<string[]>([]), [selectMode, setSelectMode] = useState(false);
   const [keyboardNode, setKeyboardNode] = useState(0);
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [hoveredNode, setHoveredNode] = useState<string>();
+  const [cursorHint, setCursorHint] = useState<{ x: number; y: number; title: string }>();
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [expanded, setExpanded] = useState<string>();
   const [childCursor, setChildCursor] = useState(-1);
   const lod = useRef(new Map<string, Detail>());
@@ -42,7 +45,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const [relation, setRelation] = useState<Relation>(), [edge, setEdge] = useState<GraphEdge>();
   const [removeIds, setRemoveIds] = useState<string[]>(), [menu, setMenu] = useState<{ id?: string; point: Point }>();
   const [anchor, setAnchor] = useState<Point>(), [busy, setBusy] = useState(false);
-  const pressed = useRef(false), composing = useRef(false), typed = useRef(0), hoverTimer = useRef(0), holdTimer = useRef(0);
+  const pressed = useRef(false), composing = useRef(false), typed = useRef(0), hoverTimer = useRef(0), autoTimer = useRef(0), holdTimer = useRef(0), hoverCandidate = useRef<string | undefined>(undefined);
   const suppress = useRef(false), lastActive = useRef<string | undefined>(undefined), autoRef = useRef({ modal, locked, automatic, busy });
   const branchBefore = useRef(app.branch?.id);
   const historyBranch = useRef<string | undefined>(undefined);
@@ -214,7 +217,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     }
   }, [active?.id, app.branch?.id]);
   const cancel = () => {
-    clearTimeout(holdTimer.current); clearTimeout(hoverTimer.current);
+    clearTimeout(holdTimer.current); clearTimeout(hoverTimer.current); clearTimeout(autoTimer.current);
     const g = gestureRef.current; gestureRef.current = undefined; setGesture(undefined);
     if (g && host.current?.hasPointerCapture(g.pointerId)) host.current.releasePointerCapture(g.pointerId);
     pressed.current = false;
@@ -231,7 +234,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const hitBoxes = (): Box[] => Array.from(host.current?.querySelectorAll<HTMLElement>('.graph-node-header[data-graph-node]') ?? []).map(el => {
     const r = el.getBoundingClientRect(), h = host.current!.getBoundingClientRect();
     const visible = document.elementFromPoint(Math.max(h.left + 1, Math.min(h.right - 1, r.left + r.width / 2)), Math.max(h.top + 1, Math.min(h.bottom - 1, r.top + r.height / 2)));
-    const occluded = Array.from(host.current!.querySelectorAll<HTMLElement>('.graph-capsule, .graph-context, .graph-query, .graph-children-panel, .graph-crowded, .graph-boundary, .graph-selection, .bottom, .selection-toolbar')).some(overlay => {
+    const occluded = Array.from(host.current!.querySelectorAll<HTMLElement>('.graph-capsule, .graph-context, .graph-query, .graph-children-panel, .graph-crowded, .graph-selection, .bottom, .selection-toolbar')).some(overlay => {
       const b = overlay.getBoundingClientRect();
       return b.width > 0 && b.height > 0 && r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top;
     });
@@ -247,7 +250,11 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     }
   };
   const down = (e: ReactPointerEvent<HTMLDivElement>) => {
-    clearTimeout(hoverTimer.current); pressed.current = true;
+     clearTimeout(hoverTimer.current); clearTimeout(autoTimer.current); setToolsOpen(false);
+    if (menu && !(e.target instanceof Element && e.target.closest('.graph-context'))) setMenu(undefined);
+    if (expanded && !(e.target instanceof Element && e.target.closest('.graph-children-panel'))) setExpanded(undefined);
+    if (crowdedOpen && !(e.target instanceof Element && e.target.closest('.graph-crowded'))) setCrowdedOpen(false);
+    pressed.current = true;
     cancelAnimationFrame(animation.current);
     if (protectedElement(e.target) || (e.button !== 0 && e.button !== 2) || busy || app.removalBusy) return;
     if (e.pointerType === 'touch') {
@@ -271,7 +278,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     if (e.button === 0) holdTimer.current = window.setTimeout(() => { const current = gestureRef.current; if (current?.phase === 'pressCandidate') syncGesture(advance(current, current.point, performance.now())); }, 355);
   };
   const hover = (e: ReactPointerEvent<HTMLDivElement>) => {
-    clearTimeout(hoverTimer.current);
+     clearTimeout(autoTimer.current);
     if (pinch.current && touches.current.has(e.pointerId)) {
       touches.current.set(e.pointerId, graphPoint(e));
       const [a, b] = [...touches.current.values()];
@@ -282,6 +289,21 @@ export function Constellation({ app, children, references, modal, newTopic, rest
       }
       return;
     }
+    if (view === 'Overview' && !protectedElement(e.target)) {
+      const hovered = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-hover-node]')?.dataset.hoverNode : undefined;
+      const node = hovered ? projection?.nodes.find(n => n.id === hovered) : undefined;
+      setCursorHint(node ? { x: e.clientX, y: e.clientY, title: node.title } : undefined);
+      if (!node) { hoverCandidate.current = undefined; setHoveredNode(undefined); return; }
+      if (hoverCandidate.current !== node.id) {
+        clearTimeout(hoverTimer.current);
+        hoverCandidate.current = node.id;
+        setHoveredNode(undefined);
+        hoverTimer.current = window.setTimeout(() => {
+          if (hoverCandidate.current === node.id) setHoveredNode(node.id);
+        }, 5);
+      }
+    }
+    if (view === 'Overview' && hoveredNode && capsule.current && capsule.current.contains(e.target as Node)) setHoveredNode(undefined);
     const g = gestureRef.current;
     if (g && g.pointerId === e.pointerId) {
       const target = document.elementFromPoint(e.clientX, e.clientY);
@@ -296,7 +318,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     const outside = e.clientX < r.left - 12 || e.clientX > r.right + 12 || e.clientY < r.top - 12 || e.clientY > r.bottom + 12;
     const inside = e.clientX > r.left + 12 && e.clientX < r.right - 12 && e.clientY > r.top + 12 && e.clientY < r.bottom - 12;
     const target: View | undefined = view === 'Focus' && outside ? 'Peek' : view === 'Peek' && inside ? 'Focus' : undefined;
-    if (target) hoverTimer.current = window.setTimeout(() => {
+    if (target) autoTimer.current = window.setTimeout(() => {
       const protection = autoRef.current;
       if (!pressed.current && !composing.current && performance.now() - typed.current >= 800 && !protection.modal && !protection.locked && protection.automatic && !protection.busy) changeView(target);
     }, target === 'Peek' ? 240 : 150);
@@ -355,18 +377,15 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     [...selected, ...(edge ? [edge.source, edge.target] : []), ...(projection?.path ?? [])]);
   const renderedIds = new Set([app.branch?.id, ...allocation.visible.map(n => n.node.id)]);
   const renderedEdges = (projection?.edges ?? []).filter(e => renderedIds.has(e.source) && renderedIds.has(e.target));
-  const boundaryEdges = (projection?.edges ?? []).filter(e => renderedIds.has(e.source) !== renderedIds.has(e.target));
   const changeZoom = (factor: number, p = { x: size.width / 2, y: size.height / 2 }) => { setView('Overview'); animate(zoomAt(cameraRef.current, p, factor)); };
   const selectionBox = gesture?.phase === 'lasso' ? rectangle(gesture.origin, gesture.point) : undefined;
 
   return <>
-     <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具">
-       <button className="graph-new" onClick={newTopic}>新的学习问题</button>
-       <button className="graph-primary" disabled={!app.branch} onClick={() => changeView(view === 'Focus' ? 'Peek' : 'Focus')}>{view === 'Focus' ? '查看邻域' : '继续对话'}</button>
-       <button className="graph-overview" onClick={() => changeView('Overview')}>概览</button>
-       <div className="zoom-controls" aria-label="图谱缩放"><button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button><span>{Math.round(camera.scale * 100)}%</span><button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button></div>
-       <details><summary>工具</summary><div className="graph-options">
-        <button disabled={!active} onClick={() => changeView('Focus')}>聚焦当前</button>
+     <div className={`graph-tools ${hoveredNode ? 'is-previewing' : ''}`} data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerLeave={() => setToolsOpen(false)}>
+        <div className="zoom-controls" aria-label="图谱缩放"><button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button><span>{Math.round(camera.scale * 100)}%</span><button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button></div>
+        <button aria-expanded={toolsOpen} aria-controls="graph-options" onClick={() => setToolsOpen(open => !open)}>工具</button>
+        {toolsOpen && <div id="graph-options" className="graph-options">
+         <button onClick={newTopic}>新的学习问题</button><button disabled={!active} onClick={() => changeView('Focus')}>聚焦当前</button>
         <button onClick={() => history.back()}>返回上次位置</button><button onClick={() => history.forward()}>前进到下次位置</button>
         <details><summary>主树路径</summary>{[...(projection?.path ?? [])].reverse().map(id => <button key={id} onClick={() => open(id)}>{nodeName(id)}</button>)}</details>
         <details><summary>主题列表（当前窗口）</summary>{drawn.slice(0, 40).map(n => <button key={n.id} onClick={() => open(n.id)}>{n.kind === 'root' ? '根主题' : '子讨论'} · {n.title} · 子讨论 {n.childrenCount}</button>)}</details>
@@ -380,12 +399,12 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         <label>专注占比<input type="range" min=".88" max=".92" step=".01" value={ratio} onChange={e => setRatio(Number(e.target.value))} /></label>
         <label>邻域比例<input type="range" min=".45" max=".75" step=".01" value={peek} onChange={e => setPeek(Number(e.target.value))} /></label>
         <p>空白立即拖动平移；长按 350ms 框选。标题长按连线，右键划过主题后松开移除；可恢复。正文保持原生选区。</p>
-      </div></details>
+       </div>}
       <Recovery app={app} anchor={anchor} />
     </div>
     <div ref={host} className={`constellation view-${view.toLowerCase()}`} data-view={view} data-node-count={drawn.length} data-edge-count={projection?.edges.length ?? 0}
       onPointerDown={down} onPointerMove={hover} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={() => { if (gestureRef.current) cancel(); }}
-      onPointerLeave={() => clearTimeout(hoverTimer.current)}
+       onPointerLeave={() => { clearTimeout(hoverTimer.current); clearTimeout(autoTimer.current); hoverCandidate.current = undefined; setHoveredNode(undefined); setCursorHint(undefined); }}
       onInputCapture={() => { typed.current = performance.now(); clearTimeout(hoverTimer.current); }}
       onCompositionStartCapture={() => { composing.current = true; clearTimeout(hoverTimer.current); }}
       onCompositionEndCapture={() => { composing.current = false; typed.current = performance.now(); }}
@@ -403,7 +422,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
           const preview = !titles && level === 2;
           const label = level >= 1;
           const preselected = selectionBox && gesture?.boxes.some(b => b.id === n.id && intersects(b, selectionBox));
-          return <div key={n.id} className={`graph-node ${selected.includes(n.id) || preselected ? 'selected' : ''} ${gesture?.target === n.id ? 'gesture-target' : ''} ${n.id === app.branch?.id ? 'active' : ''}`}
+           return <div key={n.id} data-hover-node={n.id} className={`graph-node ${selected.includes(n.id) || preselected ? 'selected' : ''} ${gesture?.target === n.id ? 'gesture-target' : ''} ${n.id === app.branch?.id ? 'active' : ''} ${hoveredNode === n.id ? 'hovered' : ''}`}
             style={{ left: `calc(var(--cx, 0px) + ${n.x} * var(--scale, 1) * 1px + ${move.x}px)`, top: `calc(var(--cy, 0px) + ${n.y} * var(--scale, 1) * 1px + ${move.y}px)` }}>
             <button data-graph-node={n.id} className="graph-node-header" tabIndex={index === keyboardNode ? 0 : -1} aria-label={`打开主题 ${n.title}`} title={n.title} onClick={() => open(n.id)} onFocus={() => setKeyboardNode(index)} onKeyDown={e => {
               if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
@@ -414,14 +433,14 @@ export function Constellation({ app, children, references, modal, newTopic, rest
             }}>
               <span className={`graph-dot ${n.kind}`} />{label && <span className="graph-label">{n.title}{n.id === app.branch?.id ? ' · 当前' : n.kind === 'root' ? ' · 根' : ''}</span>}
             </button>
-            {label && <button className="graph-connector" data-graph-node={n.id} data-connector aria-label={`关联 ${n.title}`} onClick={() => { if (!suppress.current) { setSelected([n.id]); setSelectMode(true); } }}>○</button>}
+             {label && <button className="graph-connector" data-graph-node={n.id} data-connector aria-label={`关联 ${n.title}`} onClick={() => { if (!suppress.current) { setSelected([n.id]); setSelectMode(true); } }}>○</button>}
             {label && n.childrenCount > 0 && <button data-graph-protected aria-label={`${collapsed.includes(n.id) ? '展开' : '收起'}子讨论 ${n.title}`} onClick={() => { setCollapsed(s => s.includes(n.id) ? s.filter(id => id !== n.id) : [...s, n.id]); setExpanded(n.id); setChildCursor(-1); }}>{collapsed.includes(n.id) ? '+' : '−'} {n.childrenCount}</button>}
-            {preview && <div className="graph-preview" data-graph-protected><small>原文摘录</small>{n.previews.map(e => <p key={e.entryId}>{e.text}</p>)}<button onClick={() => open(n.id)}>打开原文</button></div>}
-          </div>;
+             {preview && <div className="graph-preview" data-graph-protected><small>原文摘录</small>{n.previews.map(e => <p key={e.entryId}>{e.text}</p>)}</div>}
+             {hoveredNode === n.id && view === 'Overview' && <div className="graph-hover-summary" aria-hidden="true"><small>{n.kind === 'root' ? '根主题' : '子讨论'} · 点击卡片打开</small><strong>{n.title}</strong>{n.previews.slice(0, 1).map(e => <p key={e.entryId}>{e.text}</p>)}</div>}
+           </div>;
         })}
       </div>
       {allocation.crowded.length > 0 && <div className="graph-crowded" data-graph-protected><button onClick={() => setCrowdedOpen(!crowdedOpen)}>重叠区域 · {allocation.crowded.length} 个主题</button>{crowdedOpen && <div>{allocation.crowded.slice(0, 40).map(n => <button key={n.id} onClick={() => { setCrowdedOpen(false); open(n.id); }}>{n.title}</button>)}</div>}</div>}
-      {view !== 'Focus' && boundaryEdges.length > 0 && <details className="graph-boundary" data-graph-protected><summary>窗口外关系 · {boundaryEdges.length}</summary><div>{boundaryEdges.slice(0, 40).map(e => <button key={e.id} onClick={() => setEdge(e)}>{e.type === 'parent' ? '子讨论' : e.type === 'contact' ? '联系' : '引用'} · {nodeName(renderedIds.has(e.source) ? e.target : e.source)}</button>)}</div></details>}
       {expanded && <div className="graph-children-panel" data-graph-protected><strong>{nodeName(expanded)} · 既有子讨论</strong><button onClick={() => setExpanded(undefined)}>关闭子讨论列表</button><p>收起祖先时保留当前活动路径与所选主题。</p><div>{projection?.nodes.filter(n => n.parent === expanded).slice(0, 40).map(n => <button key={n.id} onClick={() => open(n.id)}>{n.title}</button>)}</div>{projection?.childNextCursor != null && <button onClick={() => setChildCursor(projection.childNextCursor!)}>下一页子讨论</button>}</div>}
       {projection && projection.aggregate > 0 && <button className="graph-aggregate" data-graph-protected onClick={() => document.getElementById('nav-toggle')?.click()}>其余 {projection.aggregate} 个主题 · 搜索 / 分页</button>}
       <div className="graph-query" data-graph-protected><label>定位主题<input aria-label="图中搜索主题" value={search} maxLength={120} onChange={e => { setSearch(e.target.value); setCursor(-1); }} /></label>
@@ -432,22 +451,23 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         {cursor >= 0 && <button onClick={() => setCursor(-1)}>首窗口</button>}
         {loading && <span role="status">正在加载邻域…</span>}{error && <span role="alert">{error}<button onClick={() => setRefresh(n => n + 1)}>重试</button></span>}
       </div>
-       <div ref={capsule} className="graph-capsule" data-view-label={view === 'Focus' ? '专注对话' : view === 'Peek' ? '邻域预览' : '主题概览'} style={app.branch && active ? { left: `calc(var(--cx, 0px) + ${active.x - focusWidth / 2} * var(--scale, 1) * 1px)`, top: `calc(var(--cy, 0px) + ${active.y - focusHeight / 2} * var(--scale, 1) * 1px)`, width: `calc(${focusWidth}px * var(--scale, 1))`, height: `calc(${focusHeight}px * var(--scale, 1))` } : { left: 24, top: 80, width: size.width - 48, height: size.height - 104 }} aria-label="对话胶囊">
-        {app.branch && <div className="capsule-summary" data-graph-protected aria-hidden={view === 'Focus'}><h2>{app.branch.title} · 当前</h2>{!titles && active?.previews.map(p => <p key={p.entryId}>{p.text}</p>)}<button onClick={() => changeView('Focus')}>打开完整对话</button>{active && active.childrenCount > 0 && <button onClick={() => { setExpanded(active.id); setChildCursor(-1); }}>展开子讨论（{active.childrenCount}）</button>}</div>}
+       <div ref={capsule} className="graph-capsule" data-view-label={view === 'Focus' ? '专注对话' : view === 'Peek' ? '邻域预览' : '主题概览'} onClick={() => { if (view === 'Overview' && app.branch) open(app.branch.id); }} style={app.branch && active ? { left: `calc(var(--cx, 0px) + ${active.x - focusWidth / 2} * var(--scale, 1) * 1px)`, top: `calc(var(--cy, 0px) + ${active.y - focusHeight / 2} * var(--scale, 1) * 1px)`, width: `calc(${focusWidth}px * var(--scale, 1))`, height: `calc(${focusHeight}px * var(--scale, 1))` } : { left: 24, top: 80, width: size.width - 48, height: size.height - 104 }} aria-label="对话胶囊">
+         {app.branch && <div className="capsule-summary" data-graph-protected aria-hidden={view === 'Focus'}><h2>{app.branch.title} · 当前</h2>{!titles && active?.previews.map(p => <p key={p.entryId}>{p.text}</p>)}{active && active.childrenCount > 0 && <button onClick={e => { e.stopPropagation(); setExpanded(active.id); setChildCursor(-1); }}>展开子讨论（{active.childrenCount}）</button>}</div>}
         {children}
       </div>
-      {gesture && gesture.phase !== 'pressCandidate' && <div className="gesture-status" data-graph-protected role="status">
+       {gesture && gesture.phase !== 'pressCandidate' && <div className="gesture-status" data-graph-protected role="status">
         {gesture.phase === 'erasePreview' ? gesture.target ? `「${nodeName(gesture.target)}」松开移除，可恢复` : gesture.ambiguous ? '目标重叠，请取消后明确选择' : '划过一个主题以预览移除' : gesture.phase === 'lasso' ? '框选主题' : gesture.phase === 'connectPreview' ? '松开后确认关系类型' : '拖动中'}
         <button onPointerDown={e => e.stopPropagation()} onClick={cancel}>取消操作</button>
-      </div>}
+       </div>}
+       {cursorHint && <div className="graph-cursor-hint" aria-hidden="true" style={{ left: cursorHint.x + 16, top: cursorHint.y + 16 }}><span>拖到另一主题即可关联</span><strong>{cursorHint.title}</strong></div>}
       <svg className="gesture-overlay" width="100%" height="100%">
         {selectionBox && <rect x={selectionBox.left} y={selectionBox.top} width={selectionBox.right - selectionBox.left} height={selectionBox.bottom - selectionBox.top} />}
         {gesture?.phase === 'erasePreview' && <polyline className="erase-path" points={gesture.path.map(p => `${p.x},${p.y}`).join(' ')} />}
         {gesture?.phase === 'connectPreview' && <line x1={gesture.origin.x} y1={gesture.origin.y} x2={gesture.point.x} y2={gesture.point.y} />}
       </svg>
-      {selected.length > 0 && <div className="graph-selection" data-graph-protected><span>已选 {selected.length} 个主题</span><button disabled={selected.length < 2 || selected.length > 21} onClick={() => setRelation({ source: selected[0], targets: selected.slice(1) })}>关联</button><button disabled={selected.length > 20} onClick={() => setRemoveIds(selected)}>移除所选</button><button onClick={() => setSelected([])}>清除选择</button></div>}
+       {selected.length > 0 && <div className="graph-selection" data-graph-protected><span>已选 {selected.length} 个主题</span><button disabled={selected.length < 2 || selected.length > 21} onClick={() => setRelation({ source: selected[0], targets: selected.slice(1) })}>关联</button><button className="danger" disabled={selected.length > 20} onClick={() => setRemoveIds(selected)}>移除所选</button><button onClick={() => setSelected([])}>清除选择</button></div>}
       {menu && <div className="graph-context" data-graph-protected style={{ left: Math.max(16, Math.min(menu.point.x, size.width - 240)), top: Math.max(16, Math.min(menu.point.y, size.height - 200)) }}>
-        {menu.id && <><strong>{nodeName(menu.id)}</strong><button onClick={() => { open(menu.id!); setMenu(undefined); }}>继续对话</button><button onClick={() => { setRemoveIds([menu.id!]); setMenu(undefined); }}>移除主题（可恢复）</button><button onClick={() => { setSelected([menu.id!]); setSelectMode(true); setMenu(undefined); }}>关联到…选择目标</button></>}
+         {menu.id && <><strong>{nodeName(menu.id)}</strong><button onClick={() => { open(menu.id!); setMenu(undefined); }}>继续对话</button><button className="danger" onClick={() => { setRemoveIds([menu.id!]); setMenu(undefined); }}>移除主题（可恢复）</button><button onClick={() => { setSelected([menu.id!]); setSelectMode(true); setMenu(undefined); }}>关联到…选择目标</button></>}
         {menu.id && <div><button disabled={busy} onClick={() => void moveNode(menu.id!, -80, 0)}>向左移动</button><button disabled={busy} onClick={() => void moveNode(menu.id!, 80, 0)}>向右移动</button><button disabled={busy} onClick={() => void moveNode(menu.id!, 0, -80)}>向上移动</button><button disabled={busy} onClick={() => void moveNode(menu.id!, 0, 80)}>向下移动</button></div>}
         <button onClick={() => { setSelectMode(true); setMenu(undefined); }}>选择模式</button><button onClick={() => setMenu(undefined)}>关闭菜单</button>
       </div>}

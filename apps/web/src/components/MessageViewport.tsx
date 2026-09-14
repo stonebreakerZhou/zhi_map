@@ -18,7 +18,7 @@ function Message({ entry, app, jump, locate, select }: { entry: Entry; app: Work
     <div className="toolbar"><button aria-pressed={raw} onClick={() => setRaw(!raw)}>{raw ? '返回排版阅读' : '选择原文'}</button>
       {entry.kind === 'message' && <button data-fork disabled={!entry.text.trim()} onClick={() => select({ entryId: entry.id, start: 0, end: entry.text.length, text: entry.text })}>从这里分叉</button>}
       {(entry.kind === 'reference' || entry.inherited) && <button data-jump onClick={() => locate({ branchId: entry.source.branchId, entryId: entry.source.messageId, start: entry.range?.start ?? 0, end: entry.range?.end ?? entry.text.length })}>返回原文</button>}
-      {entry.kind === 'reference' && <button onClick={() => void app.action({ type: 'removeReference', branchId: app.branch!.id, entryId: entry.id }).catch(app.report)}>移除引用</button>}
+      {entry.kind === 'reference' && <button className="danger-block" onClick={() => void app.action({ type: 'removeReference', branchId: app.branch!.id, entryId: entry.id }).catch(app.report)}>移除引用</button>}
     </div>
   </article>;
 }

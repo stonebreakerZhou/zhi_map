@@ -47,8 +47,8 @@ export function advance(g: Gesture, point: Point, now: number, occluded = false)
     if (g.button === 2 && next.distance >= 24 && next.maximum >= 8) next.phase = 'erasePreview';
     if (g.button === 0) {
       if (next.maximum >= 8 && g.source && g.organize) next.phase = 'movePreview';
-      else if (next.maximum >= 8 && g.connector) next.phase = 'connectPreview';
-      else if (next.holdEligible && now - g.started >= 350) next.phase = g.source ? 'connectPreview' : 'lasso';
+      else if (next.maximum >= 8 && g.source && !g.organize) next.phase = 'connectPreview';
+      else if (next.holdEligible && now - g.started >= 350 && !g.source) next.phase = 'lasso';
       else if (next.maximum >= 8 && !g.source) next.phase = 'pan';
     }
   }

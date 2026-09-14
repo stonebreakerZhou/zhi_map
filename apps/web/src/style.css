@@ -26,6 +26,8 @@ button svg { vertical-align: middle; flex-shrink: 0; }
 .primary:hover { background: #3f418b; border-color: #3f418b; box-shadow: 0 7px 18px rgba(78, 80, 168, .28); }
 .icon-button { width: 38px; padding: 8px; display: inline-flex; align-items: center; justify-content: center; }
 .danger { color: #a42f36; }
+.danger-block { width: 100%; min-height: 44px; margin: 4px 0; background: #fff0ed; border: 1px solid #df765f; color: #9b3024; font-weight: 650; text-align: left; }
+.danger-block:hover { background: #f9dcd5; border-color: #c95743; color: #792117; }
 .danger-zone { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 16px; }
 .danger-zone button { margin: 4px 8px 4px 0; }
 input:not([type=checkbox]), textarea, select { width: 100%; min-width: 0; border: 1px solid #c7c7cd; border-radius: 8px; padding: 10px 12px; background: #fff; color: inherit; transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease; }
