@@ -1,5 +1,7 @@
 # 知树
 
+<img width="2848" height="1600" alt="image" src="https://github.com/user-attachments/assets/fb3573b3-12e3-4767-84a1-4a013cdc4f8d" />
+
 知树是一个自托管学习工作台。你可以从消息中的精确选区展开独立讨论，保留引用内容的快照，并将工作区保存在服务端而不是浏览器本地存储中。
 
 [English README](README.md)
