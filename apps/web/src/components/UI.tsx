@@ -1,8 +1,11 @@
+import { useEffect, useRef } from 'react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
 
-export function Icon({ name }: { name: 'copy' | 'expand' | 'plus' | 'close' | 'settings' }) {
-  const paths = { copy: 'M9 9h11v11H9z M15 5V3H3v12h2', expand: 'M4 4h16v12H9l-5 4z M8 9h8 M12 6v6', plus: 'M12 5v14 M5 12h14', close: 'M6 6l12 12 M18 6L6 18', settings: 'M4 7h16 M4 17h16 M8 4v6 M16 14v6' };
-  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+export function Icon({ name }: { name: 'copy' | 'check' | 'expand' | 'plus' | 'close' | 'settings' }) {
+  const paths = { copy: 'M9 9h11v11H9z M15 5V3H3v12h2', check: 'M5 13l4 4L19 7', expand: 'M4 4h16v12H9l-5 4z M8 9h8 M12 6v6', plus: 'M12 5v14 M5 12h14', close: 'M6 6l12 12 M18 6L6 18', settings: 'M4 7h16 M4 17h16 M8 4v6 M16 14v6' };
+  const ref = useRef<SVGSVGElement>(null), first = useRef(true);
+  useEffect(() => { if (first.current) { first.current = false; return; } const el = ref.current; if (!el) return; el.classList.remove('icon-swap'); void el.getBoundingClientRect(); el.classList.add('icon-swap'); }, [name]);
+  return <svg ref={ref} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
 }
 export function Button({ busy, children, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { busy?: boolean }) {
   return <button type="button" {...props} disabled={props.disabled || busy} aria-busy={busy || undefined}>{children}</button>;

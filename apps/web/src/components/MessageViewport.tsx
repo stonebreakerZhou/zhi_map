@@ -26,7 +26,7 @@ function Message({ entry, app, jump, locate, select }: { entry: Entry; app: Work
 export function MessageViewport({ app, select, jump, locate }: { app: WorkspaceController; select: (s: Selection) => void; jump?: Jump; locate: (j: Jump) => void }) {
   const [picked, setPicked] = useState<Selection>();
   const container = useRef<HTMLDivElement>(null), toolbar = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ left: 0, top: 0 }), [hint, setHint] = useState('');
+  const [position, setPosition] = useState({ left: 0, top: 0 }), [hint, setHint] = useState(''), [copied, setCopied] = useState(false);
   useEffect(() => { if (!hint) return; const timer = window.setTimeout(() => setHint(''), 4000); return () => clearTimeout(timer); }, [hint]);
   useEffect(() => {
     let timer = 0;
@@ -53,7 +53,7 @@ export function MessageViewport({ app, select, jump, locate }: { app: WorkspaceC
     <p className="selection-help">在单条消息中选择文字可展开讨论或复制；公式请切换“选择原文”。</p>
     <Pager cursor={app.page.cursor ?? -1} next={app.page.nextCursor} change={cursor => void app.navigate(cursor).catch(app.report)} />
     {app.page.items.map(entry => <Message key={entry.id} entry={entry} app={app} jump={jump} locate={locate} select={select} />)}
-    {picked && <div ref={toolbar} className="selection-toolbar" role="toolbar" aria-label="选区操作" style={position} onPointerDown={e => e.preventDefault()}><Button id="expand-selection" className="primary" onClick={() => { select(picked); setPicked(undefined); }}><Icon name="expand" />展开讨论</Button><IconButton icon="copy" label="复制选中文字" onClick={async () => { try { await navigator.clipboard.writeText(picked.text); setHint('已复制选中文字'); } catch { setHint('复制失败，请使用系统复制菜单或 Ctrl / Cmd + C。'); } }} /></div>}
+    {picked && <div ref={toolbar} className="selection-toolbar" role="toolbar" aria-label="选区操作" style={position} onPointerDown={e => e.preventDefault()}><Button id="expand-selection" className="primary" onClick={() => { select(picked); setPicked(undefined); }}><Icon name="expand" />展开讨论</Button><IconButton icon={copied ? 'check' : 'copy'} label="复制选中文字" onClick={async () => { try { await navigator.clipboard.writeText(picked.text); setHint('已复制选中文字'); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { setHint('复制失败，请使用系统复制菜单或 Ctrl / Cmd + C。'); } }} /></div>}
     {hint && <p className="selection-feedback" role="status">{hint}</p>}
      {app.partial() && <article className="message assistant" id="stream-output" aria-live="polite"><header>知树 · 正在生成</header><div className="message-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(app.partial()) }} /></article>}
   </div>;

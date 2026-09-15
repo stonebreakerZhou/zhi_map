@@ -18,7 +18,7 @@
 .graph-tools .graph-overview { color: var(--muted); }
 .zoom-controls { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; color: var(--muted); font-size: 12px; }
 .zoom-controls button { min-width: 34px; padding: 6px; }
-.zoom-controls span { min-width: 38px; text-align: center; }
+.zoom-controls span { min-width: 38px; text-align: center; font-variant-numeric: tabular-nums; }
 .graph-options { position: absolute; z-index: 16; right: 0; bottom: 100%; width: min(360px, calc(100vw - 32px)); max-height: 65dvh; overflow: auto; display: grid; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid var(--graph-border); border-radius: 12px; box-shadow: var(--shadow-pop); }
 .graph-options label { display: flex; align-items: center; gap: 8px; }
 .constellation { position: relative; flex: 1; min-height: 0; overflow: hidden; background-color: var(--graph-bg); background-image: linear-gradient(var(--graph-grid) 1px, transparent 1px), linear-gradient(90deg, var(--graph-grid) 1px, transparent 1px), radial-gradient(circle at 50% 42%, var(--surface) 0, var(--graph-bg) 70%); background-size: 48px 48px, 48px 48px, 100% 100%; touch-action: none; }
