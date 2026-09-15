@@ -1,4 +1,5 @@
 # Zhishu
+<img width="2848" height="1600" alt="image" src="https://github.com/user-attachments/assets/c165c153-d1f5-47c1-9891-2eaf890101dd" />
 
 Zhishu is a self-hosted learning workspace for branching a discussion from an exact selection, preserving reference snapshots, and keeping each workspace on the server rather than in browser storage.
 

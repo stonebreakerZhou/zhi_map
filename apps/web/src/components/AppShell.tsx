@@ -11,7 +11,8 @@ import { ReferencesDialog } from './ReferencesDialog.js';
 import { TopicSettings } from './TopicSettings.js';
 import { ProviderSettings } from './ProviderSettings.js';
 import { DataSettings } from './DataSettings.js';
-import { Dialog } from './Dialog.js';
+import { Dialog, ConfirmDialog } from './Dialog.js';
+import { AuthModal } from './AuthModal.js';
 import { Constellation } from '../graph/Constellation.js';
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
@@ -22,10 +23,12 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: b
 
 export function AppShell() {
   const [controller] = useState(() => new WorkspaceController()); const app = useWorkspace(controller);
-  const [modal, setModal] = useState<'' | 'settings' | 'references' | 'topic' | 'context'>(''), [selection, setSelection] = useState<Selection>(), [jump, setJump] = useState<Jump>(), [nav, setNav] = useState(false);
+  const [modal, setModal] = useState<'' | 'settings' | 'references' | 'topic' | 'context' | 'auth'>(''), [selection, setSelection] = useState<Selection>(), [jump, setJump] = useState<Jump>(), [nav, setNav] = useState(false);
   const [settingsState, setSettingsState] = useState({ dirty: false, busy: false }), [config, setConfig] = useState<AiConfig>();
   const [dataBusy, setDataBusy] = useState(false);
   const [referenceSource, setReferenceSource] = useState<string>();
+  const [authState, setAuthState] = useState<{ isLoggedIn: boolean; email?: string | null }>({ isLoggedIn: false });
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
   const createGuard = useRef(false);
   const configChanged = useRef(false);
   const acceptConfig = useCallback((c: AiConfig) => { configChanged.current = true; setConfig(c); }, []);
@@ -33,6 +36,9 @@ export function AppShell() {
   useEffect(() => { if (!app.initialized) return; let live = true; void api.aiConfig().then(c => { if (live && !configChanged.current) setConfig(c); }).catch(() => {}); return () => { live = false; }; }, [app.initialized]);
   const providerState = useCallback((dirty: boolean, busy: boolean) => setSettingsState({ dirty, busy }), []);
   const close = () => { setModal(''); setSelection(undefined); setSettingsState({ dirty: false, busy: false }); };
+  // Refresh auth state whenever the modal closes (covers login/logout).
+  const refreshAuth = useCallback(() => { void api.authMe().then(s => setAuthState({ isLoggedIn: s.isLoggedIn, email: s.email ?? null })).catch(() => {}); }, []);
+  useEffect(() => { refreshAuth(); }, [refreshAuth]);
   useEffect(() => {
     if (!nav) return;
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setNav(false); };
@@ -42,6 +48,13 @@ export function AppShell() {
     return () => { document.body.style.overflow = previousOverflow; document.removeEventListener('keydown', closeOnEscape); };
   }, [nav]);
   const navigated = () => { setNav(false); requestAnimationFrame(() => document.getElementById('draft')?.focus()); };
+  const confirmLogout = async () => {
+    setLogoutConfirm(false);
+    try {
+      await api.emailLogout();
+      window.location.reload();
+    } catch (e) { app.report(e); }
+  };
   const newTopic = async () => {
     if (createGuard.current) return;
     createGuard.current = true;
@@ -57,7 +70,7 @@ export function AppShell() {
   return <div className={`graph-workspace ${nav ? 'nav-open' : ''}`} data-cache-pages={app.cache.size} data-cache-entries={app.cache.entryCount}>
     <a className="skip" href="#draft">跳到输入框</a><TopicNavigator app={app} navigated={navigated} settings={() => { setNav(false); setModal('settings'); }} />
     {nav && <button className="nav-backdrop" aria-label="收起主题导航" onClick={() => { setNav(false); document.getElementById('nav-toggle')?.focus(); }} />}
-     <main className="workspace"><header className="topbar"><button id="nav-toggle" aria-expanded={nav} onClick={() => setNav(!nav)}>菜单</button><button className="top-title" title={config?.model ?? '设置模型连接'} onClick={() => setModal('settings')}>{config?.configured ? config.model : '设置模型'}</button><div className="top-actions"><button id="related-button" disabled={!branch} onClick={() => setModal('references')}>引用</button><button id="context-button" disabled={!branch} onClick={() => setModal('context')}>上下文</button><button id="manage-button" className="top-manage" disabled={!branch} onClick={() => setModal('topic')}>管理</button></div></header>
+     <main className="workspace"><header className="topbar"><button id="nav-toggle" aria-expanded={nav} onClick={() => setNav(!nav)}>菜单</button><button className="top-title" title={config?.model ?? '设置模型连接'} onClick={() => setModal('settings')}>{config?.configured ? config.model : '设置模型'}</button>{authState.isLoggedIn && authState.email ? <><button id="user-button" className="top-manage" title="账户设置" onClick={() => setModal('auth')}>🔑 {authState.email}</button><button className="top-manage" title="登出" onClick={() => setLogoutConfirm(true)}>登出</button></> : <button id="login-button" className="primary" title="登录或注册" onClick={() => setModal('auth')}>🔓 登录</button>}<div className="top-actions"><button id="related-button" disabled={!branch} onClick={() => setModal('references')}>引用</button><button id="context-button" disabled={!branch} onClick={() => setModal('context')}>上下文</button><button id="manage-button" className="top-manage" disabled={!branch} onClick={() => setModal('topic')}>管理</button></div></header>
        <Constellation app={app} restoreReading={setJump} modal={Boolean(modal || selection)} references={source => { setReferenceSource(source); setModal('references'); }} newTopic={() => void newTopic()}>
        <section className="chat" aria-label="当前讨论"><div id="chat-header"><h1>{branch?.title ?? '让好奇有迹可循'}</h1>{branch?.selection && <blockquote>{branch.selection.text}</blockquote>}{branch?.parent && <button data-return onClick={() => void locate({ branchId: branch.parent!.branchId, entryId: branch.parent!.entryId, start: branch.selection?.start ?? 0, end: branch.selection?.end ?? 0 }).catch(app.report)}>返回原讨论</button>}{branch?.sourceOrigin && !branch.parent && <p>原父主题已移除；出处快照保留。</p>}</div>
           {branch ? <MessageViewport app={app} select={setSelection} jump={jump} locate={j => void locate(j).catch(app.report)} /> : <div className="onboarding"><p className="onboarding-kicker">把一个问题想清楚</p><h2>从一个问题开始</h2><p>输入问题，得到回答；选中其中一段，就能把思路继续展开。</p><button className="primary" onClick={() => { if (config?.configured) void newTopic(); else setModal('settings'); }}>{config?.configured ? `开始新问题 · ${config.model}` : '先连接模型'}</button><button data-sample onClick={() => void app.action({ type: 'sample' }).catch(app.report)}>先体验人工学习示例</button></div>}
@@ -68,5 +81,7 @@ export function AppShell() {
     {modal === 'topic' && branch && <TopicSettings app={app} close={close} />}
     {modal === 'settings' && <Dialog title="设置与数据" close={close} dirty={settingsState.dirty} locked={settingsState.busy || dataBusy}><ProviderSettings state={providerState} changed={acceptConfig} /><DataSettings app={app} busyChanged={setDataBusy} /></Dialog>}
     {modal === 'context' && <Dialog title="当前上下文" close={close}><p>选区原文始终发送并计入 64,000 字符预算；剩余预算保留最近最多 100 条消息。较早背景和历史引用可能被裁剪，发生裁剪时会提示；完整历史仍可分页查看。选区与最新问题超出预算时会阻止生成。</p><button onClick={() => { void app.navigate(-1).catch(app.report); close(); }}>查看最早一页</button></Dialog>}
+    {modal === 'auth' && <Dialog title="账户" close={() => { close(); refreshAuth(); }}><AuthModal close={() => { close(); refreshAuth(); }} /></Dialog>}
+    {logoutConfirm && <ConfirmDialog title="确认登出？" close={() => setLogoutConfirm(false)} label="确认登出" confirm={confirmLogout}><p>登出后会回到匿名状态。你已保存的内容不会丢失——它们仍归属当前账号，重新登录同邮箱即可继续访问。</p></ConfirmDialog>}
   </div>;
 }
