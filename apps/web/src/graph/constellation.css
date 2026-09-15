@@ -19,7 +19,7 @@
 .zoom-controls { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; color: var(--muted); font-size: 12px; }
 .zoom-controls button { min-width: 34px; padding: 6px; }
 .zoom-controls span { min-width: 38px; text-align: center; }
-.graph-options { position: absolute; z-index: 16; right: 0; bottom: calc(100% + 8px); width: min(360px, calc(100vw - 32px)); max-height: 65dvh; overflow: auto; display: grid; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid var(--graph-border); border-radius: 12px; box-shadow: var(--shadow-pop); }
+.graph-options { position: absolute; z-index: 16; right: 0; bottom: 100%; width: min(360px, calc(100vw - 32px)); max-height: 65dvh; overflow: auto; display: grid; gap: 12px; padding: 16px; background: var(--surface); border: 1px solid var(--graph-border); border-radius: 12px; box-shadow: var(--shadow-pop); }
 .graph-options label { display: flex; align-items: center; gap: 8px; }
 .constellation { position: relative; flex: 1; min-height: 0; overflow: hidden; background-color: var(--graph-bg); background-image: linear-gradient(var(--graph-grid) 1px, transparent 1px), linear-gradient(90deg, var(--graph-grid) 1px, transparent 1px), radial-gradient(circle at 50% 42%, var(--surface) 0, var(--graph-bg) 70%); background-size: 48px 48px, 48px 48px, 100% 100%; touch-action: none; }
 .graph-edges, .graph-nodes, .gesture-overlay { position: absolute; inset: 0; pointer-events: none; }
@@ -49,7 +49,7 @@
 .graph-hover-summary strong { display: block; margin-top: 4px; font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
 .graph-hover-summary p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 19px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .graph-node:has(.graph-preview) .graph-label { font-size: 16px; line-height: 24px; }
-.graph-capsule { position: absolute; z-index: 6; display: flex; flex-direction: column; border: 1px solid var(--capsule-border); border-radius: 20px; background: var(--capsule-bg); overflow: visible; pointer-events: auto; touch-action: auto; box-shadow: 0 22px 70px rgba(37,36,67,.13), 0 0 0 6px rgba(78,80,168,.045); }
+.graph-capsule { position: absolute; z-index: 6; display: flex; flex-direction: column; border: 1px solid var(--capsule-border); border-radius: 20px; background: var(--capsule-bg); overflow: visible; pointer-events: auto; touch-action: auto; box-shadow: 0 22px 70px rgba(37,36,67,.13), 0 0 0 6px rgba(78,80,168,.045); transition: border-color var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out); }
 .graph-capsule::before { content: attr(data-view-label); position: absolute; top: -28px; left: 4px; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; pointer-events: none; }
 .graph-capsule .chat { flex: none; width: var(--focus-width, 100%); height: calc(var(--focus-height, 100%) - var(--editor-height, 160px)); max-width: none; padding: 24px max(24px, calc((var(--focus-width, 100%) - 840px) / 2)); overscroll-behavior: contain; border-radius: 24px; transition: opacity var(--dur-2) var(--ease-out); }
 .graph-capsule .message-text { font-size: 16px; line-height: 28px; }
@@ -58,8 +58,9 @@
 .graph-capsule .chat { margin-bottom: var(--editor-height, 160px); }
 .composer-topic { font-size: 12px; line-height: 20px; padding: 0 8px 4px; }
 .view-focus .composer-topic { display: none; }
-.view-peek .graph-capsule { pointer-events: auto; }
+.view-peek .graph-capsule { pointer-events: auto; cursor: pointer; }
 .view-overview .graph-capsule { cursor: pointer; touch-action: none; }
+.view-overview .graph-capsule:hover, .view-peek .graph-capsule:hover { border-color: var(--accent); box-shadow: 0 26px 84px rgba(37,36,67,.18), 0 0 0 7px rgba(78,80,168,.15); }
 .view-overview .graph-capsule .chat, .view-peek .graph-capsule .chat { opacity: 0; pointer-events: none; }
 .view-overview .graph-capsule:has(.onboarding), .view-peek .graph-capsule:has(.onboarding) { pointer-events: auto; }
 .view-overview .graph-capsule .chat:has(.onboarding), .view-peek .graph-capsule .chat:has(.onboarding) { opacity: 1; pointer-events: auto; }
@@ -106,7 +107,7 @@
   .graph-tools { left: 8px; bottom: 8px; gap: 4px; padding: 4px; }
   .graph-tools { flex-wrap: nowrap; overflow-x: auto; }
   .graph-tools > * { flex-shrink: 0; }
-  .graph-tools .graph-options { position: absolute; right: 0; bottom: calc(100% + 8px); }
+  .graph-tools .graph-options { position: absolute; right: 0; bottom: 100%; }
   .graph-tools button { padding: 8px; }
   .graph-tools .graph-overview { display: none; }
   .zoom-controls { margin-left: 0; }
@@ -125,5 +126,5 @@
   .graph-recovery, .graph-options { box-shadow: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .graph-capsule .chat, .capsule-summary, .graph-node.hovered, .graph-node-header, .graph-capsule .bottom { transition: none; animation: none; }
+  .graph-capsule, .graph-capsule .chat, .capsule-summary, .graph-node.hovered, .graph-node-header, .graph-capsule .bottom { transition: none; animation: none; }
 }

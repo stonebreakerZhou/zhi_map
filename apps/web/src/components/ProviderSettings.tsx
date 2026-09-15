@@ -18,9 +18,10 @@ export function ProviderSettings({ state, changed }: { state: (dirty: boolean, b
   const guard = useRef(false), live = useRef(false), formRef = useRef<HTMLFormElement>(null);
   const dirty = JSON.stringify(form) !== JSON.stringify(saved) || key !== '';
   const identityChanged = form.provider !== saved.provider || form.baseUrl.replace(/\/$/, '') !== saved.baseUrl.replace(/\/$/, '');
-  const needKey = config?.source !== 'user' || identityChanged;
+  const isHordeDefault = config?.source === 'default';
+  const needKey = (config?.source !== 'user' && !isHordeDefault) || identityChanged;
   useEffect(() => { state(dirty, busy); }, [dirty, busy, state]);
-  const accept = (c: AiConfig) => { if (!live.current) return; const f = { provider: c.provider ?? 'openai', baseUrl: c.baseUrl ?? defaults.baseUrl, model: c.model ?? '', timeoutMs: String(c.timeoutMs ?? 60000), maxTokens: String(c.maxTokens ?? 4096), temperature: c.temperature == null ? '' : String(c.temperature) }; setConfig(c); setForm(f); setSaved(f); setKey(''); setVisible(false); changed(c); };
+  const accept = (c: AiConfig) => { if (!live.current) return; const horde = c.source === 'default'; const f = { provider: horde ? 'openai' : (c.provider ?? 'openai'), baseUrl: horde ? defaults.baseUrl : (c.baseUrl ?? defaults.baseUrl), model: horde ? '' : (c.model ?? ''), timeoutMs: String(c.timeoutMs ?? 60000), maxTokens: String(c.maxTokens ?? 4096), temperature: c.temperature == null ? '' : String(c.temperature) }; setConfig(c); setForm(f); setSaved(f); setKey(''); setVisible(false); changed(c); };
   const load = async (active = () => live.current) => { if (guard.current) return; guard.current = true; setBusy(true); setFailed(false); try { const c = await api.aiConfig(); if (active()) { accept(c); setFeedback(''); } } catch (e) { if (active()) { setFailed(true); setFeedback((e as Error).message); } } finally { if (active()) { guard.current = false; setBusy(false); } } };
   useEffect(() => { live.current = true; let active = true; void load(() => active); return () => { active = false; live.current = false; guard.current = false; }; }, []);
   const field = (name: keyof typeof form, value: string) => setForm(f => ({ ...f, [name]: value }));
@@ -38,14 +39,14 @@ export function ProviderSettings({ state, changed }: { state: (dirty: boolean, b
     } catch (e) { setFeedback(`${persisted ? '保存成功，但连接测试失败：' : '保存失败：'}${(e as Error).message}`); }
     finally { guard.current = false; setBusy(false); }
   };
-  return <section className="settings-section"><h3>模型连接</h3><p className="config-status">{config?.configured ? `已配置 · ${config.source === 'user' ? '个人配置' : '服务器环境配置'}` : '尚未配置个人模型'}</p><p>个人配置优先；清除后回退到服务器环境配置。测试会发送一个简短请求，可能产生用量。</p>
+  return <section className="settings-section"><h3>模型连接</h3><p className="config-status">{config?.configured ? `已配置 · ${config.source === 'user' ? '个人配置' : config.source === 'default' ? '公网 AI Horde（免费，无需密钥）' : '服务器环境配置'}` : '尚未配置个人模型'}</p><p>个人配置优先；清除后回退到服务器环境配置。测试会发送一个简短请求，可能产生用量。</p>
     {failed && <Button onClick={() => void load()}>重新加载模型配置</Button>}
     <form ref={formRef} id="ai-settings" onSubmit={e => { e.preventDefault(); void save(false); }}><fieldset disabled={!config || busy}>
       <label className="field">服务商预设<select value="" onChange={e => choosePreset(e.target.value)}><option value="" disabled>选择预设（替换地址和模型）</option>{presets.map((p, i) => <option key={p.name} value={i}>{p.name}</option>)}</select><small>预设模型仅为填写示例，请核对账号支持的模型；也可直接编辑自定义地址。</small></label>
       <label className="field">协议<select id="ai-provider" value={form.provider} onChange={e => chooseProtocol(e.target.value)}><option value="openai">OpenAI compatible</option><option value="anthropic">Anthropic Messages</option><option value="gemini">Gemini</option></select><small>切换协议保留自定义地址，清空本次输入的密钥；使用品牌预设可明确替换地址。</small></label>
       <InputField label="Base URL" id="ai-base-url" type="url" required maxLength={2048} value={form.baseUrl} onChange={e => { setKey(''); setVisible(false); field('baseUrl', e.target.value); }} />
       <InputField label="模型" id="ai-model" required maxLength={200} value={form.model} onChange={e => field('model', e.target.value)} />
-      <InputField label={needKey ? 'API key（此连接必须填写）' : 'API key（留空保留当前连接密钥）'} hint={identityChanged ? '协议或地址已更改：必须输入该服务的密钥，不会自动使用旧密钥。' : '密钥加密保存，已保存的密钥不会返回浏览器。'} id="ai-key" type={visible ? 'text' : 'password'} autoComplete="new-password" required={needKey} maxLength={4096} value={key} onChange={e => setKey(e.target.value)} />
+      <InputField label={isHordeDefault && !identityChanged ? 'API key（留空使用公网 AI Horde，无需密钥）' : needKey ? 'API key（此连接必须填写）' : 'API key（留空保留当前连接密钥）'} hint={identityChanged ? '协议或地址已更改：必须输入该服务的密钥，不会自动使用旧密钥。' : isHordeDefault ? '当前使用公网 AI Horde，无需密钥；配置个人模型时才需要填写。' : '密钥加密保存，已保存的密钥不会返回浏览器。'} id="ai-key" type={visible ? 'text' : 'password'} autoComplete="new-password" required={needKey} maxLength={4096} value={key} onChange={e => setKey(e.target.value)} />
       <Button aria-pressed={visible} disabled={!key} onClick={() => setVisible(!visible)}>{visible ? '隐藏本次输入' : '显示本次输入'}</Button>
       <details><summary>高级参数</summary><InputField label="超时（毫秒）" id="ai-timeout" type="number" required min={100} max={600000} step={1} value={form.timeoutMs} onChange={e => field('timeoutMs', e.target.value)} /><InputField label="最大输出 tokens" type="number" required min={1} max={65536} step={1} value={form.maxTokens} onChange={e => field('maxTokens', e.target.value)} /><InputField label="Temperature（可选）" type="number" min={0} max={1} step={0.1} value={form.temperature} onChange={e => field('temperature', e.target.value)} /></details>
       <div className="settings-actions toolbar"><Button id="save-ai-config" className="primary" type="submit" busy={busy}>保存模型配置</Button><Button busy={busy} onClick={() => void save(true)}>保存并测试</Button></div>

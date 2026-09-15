@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     ai_provider: str = "openai"
     ai_allow_private_hosts: bool = False
     ai_fake_ip_hosts: str = ""
+    ai_horde_enabled: bool = True
+    ai_horde_base_url: str = "https://aihorde.net"
+    ai_horde_model: str = ""
+    ai_horde_api_key: str = "0000000000"
+    ai_horde_timeout_ms: int = 300000
 
     def key(self):
         if self.data_encryption_key:

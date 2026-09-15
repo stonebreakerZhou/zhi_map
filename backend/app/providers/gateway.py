@@ -169,6 +169,68 @@ def normalize(provider, value):
     return text, value.get("usageMetadata"), bool(candidate.get("finishReason"))
 
 
+async def _horde_events(request, event):
+    """AI Horde is asynchronous and poll-based, not a streaming SSE protocol."""
+    base = request.base_url.rstrip("/")
+    prompt = "\n\n".join(
+        ("用户：" + m["content"]) if m["role"] == "user"
+        else ("助手：" + m["content"]) if m["role"] == "assistant"
+        else m["content"]
+        for m in request.messages
+    )
+    headers = {"apikey": request.key or "0000000000"}
+    payload = {
+        "prompt": prompt,
+        "params": {
+            "n": 1,
+            "max_context_length": 2048,
+            "max_length": max(16, min(request.max_tokens, 1024)),
+            "rep_pen": 1.1,
+            "top_p": 0.92,
+            "top_k": 100,
+            "temperature": request.temperature if request.temperature is not None else 0.7,
+            "sampler_order": [6, 0, 1, 2, 3, 4, 5],
+        },
+        "trusted_workers": False,
+        "allow_downgrade": True,
+    }
+    if request.model:
+        payload["models"] = [request.model]
+    yield event("started")
+    try:
+        async with httpx.AsyncClient(timeout=request.timeout, follow_redirects=False) as client:
+            submit = await client.post(base + "/api/v2/generate/text/async", json=payload, headers=headers)
+            if submit.status_code != 202:
+                raise GatewayError("AI Horde 提交失败，请稍后重试。")
+            job_id = submit.json().get("id")
+            if not job_id:
+                raise GatewayError("AI Horde 未返回任务。")
+            while True:
+                await asyncio.sleep(2.0)
+                status = await client.get(base + f"/api/v2/generate/text/status/{job_id}", headers=headers)
+                if status.status_code != 200:
+                    raise GatewayError("AI Horde 状态查询失败。")
+                data = status.json()
+                if data.get("done"):
+                    if data.get("faulted") or not data.get("finished"):
+                        raise GatewayError("AI Horde 生成失败，请重试。")
+                    generations = data.get("generations") or []
+                    text = (generations[0].get("text") if generations else "") or ""
+                    if not text.strip():
+                        raise GatewayError("AI Horde 返回空回答。")
+                    yield event("delta", text=text)
+                    yield event("completed")
+                    return
+    except asyncio.CancelledError:
+        raise
+    except httpx.TimeoutException:
+        yield event("failed", error="AI Horde 响应超时，请重试。")
+    except GatewayError as exc:
+        yield event("failed", error=str(exc))
+    except Exception:
+        yield event("failed", error="AI Horde 连接失败或响应格式无效。")
+
+
 async def _events(request: ChatRequest, *, run_id=None, transport=None):
     run_id = run_id or str(uuid.uuid4())
     seq = 0
@@ -178,6 +240,10 @@ async def _events(request: ChatRequest, *, run_id=None, transport=None):
         seq += 1
         return {"type": kind, "runId": run_id, "seq": seq, **payload}
 
+    if request.provider == "horde":
+        async for item in _horde_events(request, event):
+            yield item
+        return
     yield event("started")
     try:
         adapter = ADAPTERS.get(request.provider)

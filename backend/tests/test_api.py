@@ -2,6 +2,7 @@ import os
 import tempfile
 _test_dir = tempfile.TemporaryDirectory(prefix="zhishu-api-")
 os.environ["DATABASE_URL"] = "sqlite:///" + _test_dir.name.replace("\\", "/") + "/test.db"
+os.environ["AI_HORDE_ENABLED"] = "false"
 from fastapi.testclient import TestClient
 from app.main import app
 import atexit

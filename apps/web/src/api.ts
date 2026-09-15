@@ -3,7 +3,7 @@ export type Compact = { revision: number; active: string | null; affectedIds?: s
 export type Page<T> = { items: T[]; nextCursor: number | null; cursor?: number };
 
 export type Snapshot = { state: State; revision: number };
-export type AiConfig = { configured: boolean; provider?: string; maxTokens?: number; temperature?: number | null; baseUrl: string | null; model: string | null; timeoutMs: number | null; updatedAt: string | null; source: 'user' | 'environment' | 'none' };
+export type AiConfig = { configured: boolean; provider?: string; maxTokens?: number; temperature?: number | null; baseUrl: string | null; model: string | null; timeoutMs: number | null; updatedAt: string | null; source: 'user' | 'environment' | 'default' | 'none' };
 export class ConflictError extends Error {}
 export class RequestError extends Error {
   constructor(message: string, readonly status: number) { super(message); }

@@ -100,6 +100,18 @@ def public_config(db, user_id):
             "updatedAt": None,
             "source": "environment",
         }
+    if settings.ai_horde_enabled:
+        return {
+            "configured": True,
+            "provider": "horde",
+            "maxTokens": 4096,
+            "temperature": 0.7,
+            "baseUrl": settings.ai_horde_base_url,
+            "model": settings.ai_horde_model or "AI Horde 公网",
+            "timeoutMs": settings.ai_horde_timeout_ms,
+            "updatedAt": None,
+            "source": "default",
+        }
     return {
         "configured": False,
         "baseUrl": None,
@@ -171,13 +183,22 @@ def decrypt(row, user_id):
 def resolved(db, user_id):
     row = db.get(UserAiConfig, user_id)
     if row:
-        return valid_url(row.base_url), row.model, decrypt(row, user_id), row.timeout_ms
+        return valid_url(row.base_url), row.model, decrypt(row, user_id), row.timeout_ms, row.provider
     if settings.ai_api_key and settings.ai_model:
         return (
             valid_url(settings.ai_base_url),
             settings.ai_model,
             settings.ai_api_key,
             settings.ai_timeout_ms,
+            settings.ai_provider,
+        )
+    if settings.ai_horde_enabled:
+        return (
+            valid_url(settings.ai_horde_base_url),
+            settings.ai_horde_model,
+            settings.ai_horde_api_key,
+            settings.ai_horde_timeout_ms,
+            "horde",
         )
     error(503, "模型尚未配置。问题已保留，可在服务器配置模型后重试。")
 
@@ -198,14 +219,14 @@ def rate_limit(user_id, name, maximum):
 def chat_request(db, user_id, messages):
     from .providers import ChatRequest
 
-    base, model, key, timeout = resolved(db, user_id)
+    base, model, key, timeout, provider = resolved(db, user_id)
     row = db.get(UserAiConfig, user_id)
     return ChatRequest(
         base,
         model,
         key,
         messages,
-        provider=row.provider if row else settings.ai_provider,
+        provider=provider,
         max_tokens=row.max_tokens if row else 4096,
         temperature=row.temperature if row else None,
         timeout=timeout / 1000,

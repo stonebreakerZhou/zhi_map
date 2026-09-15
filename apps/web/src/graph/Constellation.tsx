@@ -409,7 +409,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const selectionBox = gesture?.phase === 'lasso' ? rectangle(gesture.origin, gesture.point) : undefined;
 
   return <>
-     <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerLeave={() => setToolsOpen(false)}>
+     <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerLeave={(e) => { const related = e.relatedTarget; if (related instanceof Node && e.currentTarget.contains(related)) return; setToolsOpen(false); }}>
         <div className="zoom-controls" aria-label="图谱缩放"><button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button><span>{Math.round(camera.scale * 100)}%</span><button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button></div>
         <button aria-expanded={toolsOpen} aria-controls="graph-options" onClick={() => setToolsOpen(open => !open)}>工具</button>
         <Recovery app={app} anchor={anchor} />
