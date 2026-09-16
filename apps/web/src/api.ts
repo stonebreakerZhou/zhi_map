@@ -19,18 +19,6 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-/** Same as request() but also returns the response headers — needed for
- *  the dev-mode X-Dev-Auth-Code hint returned by /api/auth/email/start. */
-export async function requestWithHeaders<T>(url: string, init?: RequestInit): Promise<{ body: T; headers: Headers }> {
-  const response = await fetch(url, { credentials: 'same-origin', headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) }, ...init });
-  const body = await response.json() as { error?: string } & T;
-  if (!response.ok) {
-    if (response.status === 409) throw new ConflictError(body.error ?? '工作区已更新。');
-    throw new RequestError(body.error ?? '请求失败。', response.status);
-  }
-  return { body, headers: response.headers };
-}
-
 export const api = {
   view: () => request<Compact>('/api/workspace/view'),
   branch: (id: string, signal?: AbortSignal) => request<BranchMeta>(`/api/branches/${encodeURIComponent(id)}`, signal ? { signal } : undefined),
@@ -47,7 +35,7 @@ export const api = {
   import: (body: unknown, revision: number) => request<Snapshot>('/api/import', { method: 'POST', body: JSON.stringify({ ...(body as object), revision }) }),
   // ─── email auth ───
   authMe: () => request<{ isLoggedIn: boolean; userId?: string; email?: string | null }>('/api/auth/me'),
-  emailStart: (email: string) => requestWithHeaders<{ ok: true }>('/api/auth/email/start', { method: 'POST', body: JSON.stringify({ email }) }),
+  emailStart: (email: string) => request<{ ok: true }>('/api/auth/email/start', { method: 'POST', body: JSON.stringify({ email }) }),
   emailRegister: (body: { email: string; code: string; password: string }) => request<{ ok: true; userId: string }>('/api/auth/email/register', { method: 'POST', body: JSON.stringify(body) }),
   emailLogin: (body: { email: string; password: string }) => request<{ ok: true; userId: string }>('/api/auth/email/login', { method: 'POST', body: JSON.stringify(body) }),
   emailLogout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST', body: '{}' }),

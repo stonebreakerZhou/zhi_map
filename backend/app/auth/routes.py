@@ -36,7 +36,6 @@ from .passwords import hash_password, verify_password
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_DEV_CODE_HEADER = "X-Dev-Auth-Code"
 _MAX_VERIFY_ATTEMPTS = 5
 _VERIFY_TTL_MINUTES = 10
 _SESSION_TTL_DAYS = 30
@@ -180,7 +179,6 @@ class PasswordResetBody(BaseModel):
 def email_start(
     body: EmailStartBody,
     request: Request,
-    response: Response,
     db: Session = Depends(_db),
 ):
     """Send a 6-digit verification code to the given email."""
@@ -209,13 +207,6 @@ def email_start(
         f"您的验证码是 {code}，{_VERIFY_TTL_MINUTES} 分钟内有效。\n"
         f"如果不是你本人操作，请忽略本邮件。",
     )
-
-    # Dev-mode hint: write code to a response header so the local UI can
-    # auto-fill it. Only honoured in dev and only for localhost callers.
-    if (not settings.production()
-            and request.client
-            and request.client.host in ("127.0.0.1", "::1")):
-        response.headers[_DEV_CODE_HEADER] = code
 
     return {"ok": True}
 
