@@ -1,12 +1,9 @@
-/// <reference types="vite/client" />
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { Button, InputField } from './UI.js';
 
 type Mode = 'login' | 'register' | 'password' | 'reset';
 type Step = 'form' | 'code';
-
-const DEV = import.meta.env.DEV;
 
 export function AuthModal({ close }: { close: () => void }) {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -18,7 +15,6 @@ export function AuthModal({ close }: { close: () => void }) {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [hint, setHint] = useState('');
-  const [devCode, setDevCode] = useState('');
   const [busy, setBusy] = useState(false);
   const guard = useRef(false);
 
@@ -44,7 +40,6 @@ export function AuthModal({ close }: { close: () => void }) {
     setOldPassword('');
     setNewPassword('');
     setHint('');
-    setDevCode('');
   };
 
   const startCode = async () => {
@@ -52,15 +47,10 @@ export function AuthModal({ close }: { close: () => void }) {
     guard.current = true;
     setBusy(true);
     setHint('');
-    setDevCode('');
     try {
-      const { headers } = await api.emailStart(email.trim());
-      const dev = headers.get('x-dev-auth-code');
-      if (dev) setDevCode(dev);
+      await api.emailStart(email.trim());
       const subject = mode === 'reset' ? '【知树】密码重置验证码' : '【知树】邮箱验证码';
-      setHint(DEV
-        ? `开发模式：${subject}已发送，下方会自动填充；后端终端也会打印一次。`
-        : `${subject}已发送至你的邮箱，请查收。`);
+      setHint(`${subject}已发送至你的邮箱，请查收。`);
       setStep('code');
     } catch (e) {
       setHint((e as Error).message);
@@ -143,9 +133,6 @@ export function AuthModal({ close }: { close: () => void }) {
       <>
         <p className="config-status">重置验证码已发送至 {email}</p>
         <InputField label="验证码（6 位）" id="auth-code" inputMode="numeric" autoComplete="one-time-code" required pattern="\d{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value)} />
-        {devCode && DEV && (
-          <p style={{ margin: '4px 0' }}><Button onClick={() => setCode(devCode)}>开发模式：自动填充验证码 {devCode}</Button></p>
-        )}
         <InputField label="新密码（至少 8 位）" id="auth-new-password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
         <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>重置成功后该账号所有设备会自动登出。</p>
       </>
@@ -153,9 +140,6 @@ export function AuthModal({ close }: { close: () => void }) {
       <>
         <p className="config-status">验证码已发送至 {email}</p>
         <InputField label="验证码（6 位）" id="auth-code" inputMode="numeric" autoComplete="one-time-code" required pattern="\d{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value)} />
-        {devCode && DEV && (
-          <p style={{ margin: '4px 0' }}><Button onClick={() => setCode(devCode)}>开发模式：自动填充验证码 {devCode}</Button></p>
-        )}
         <InputField label="设置密码（至少 8 位）" id="auth-password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} />
       </>
     ) : (
@@ -186,11 +170,5 @@ export function AuthModal({ close }: { close: () => void }) {
         {mode === 'login' ? '登录' : mode === 'password' ? '更新密码' : mode === 'reset' ? (step === 'form' ? '发送重置验证码' : '完成重置') : (step === 'form' ? '发送验证码' : '完成注册')}
       </Button>
     </div>
-
-    {DEV && (
-      <p style={{ marginTop: 12, fontSize: 12, color: 'var(--muted-2)' }}>
-        开发模式：验证码会在后端终端 stdout 打印。生产部署时不会显示此提示。
-      </p>
-    )}
   </>;
 }
