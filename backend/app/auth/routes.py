@@ -28,15 +28,15 @@ from sqlalchemy.orm import Session
 
 from ..db import AuthSession, User, UserAiConfig, Workspace, engine, token_hash
 from ..config import settings
+from . import zhihu_oauth
 from .email_sender import get_sender
-from .models import EmailCredential, EmailVerification
+from .models import EmailCredential, EmailVerification, ZhihuCredential
 from .passwords import hash_password, verify_password
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_DEV_CODE_HEADER = "X-Dev-Auth-Code"
 _MAX_VERIFY_ATTEMPTS = 5
 _VERIFY_TTL_MINUTES = 10
 _SESSION_TTL_DAYS = 30
@@ -117,6 +117,17 @@ _USER_DATA_TABLES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _is_anonymous(db: Session, user_id: str) -> bool:
+    """True when the user carries no credential — a guest, not an account."""
+    if db.execute(
+        select(EmailCredential.__table__).where(EmailCredential.user_id == user_id)
+    ).first():
+        return False
+    return not db.execute(
+        select(ZhihuCredential.__table__).where(ZhihuCredential.user_id == user_id)
+    ).first()
+
+
 def _migrate_anonymous_data(db: Session, src: str, dst: str) -> None:
     """Move every row under user_id=src into user_id=dst.
 
@@ -129,7 +140,14 @@ def _migrate_anonymous_data(db: Session, src: str, dst: str) -> None:
     cookie becomes useless once user_id changes, so its rows are simply
     dropped. Their absence is what also lets the old anon user record
     be deleted (FK on users.id).
+
+    Refuses to run when `src` is a real account. This function deletes the
+    source User row, so folding a registered account into another (e.g. an
+    already-signed-in visitor opening a second login flow) would strand its
+    credentials and destroy the account. Only guest data is mergeable.
     """
+    if not _is_anonymous(db, src):
+        return
     for table, cols in _USER_DATA_TABLES:
         col_list = ", ".join(cols)
         # Insert dst side first; dst-wins on conflict.
@@ -180,7 +198,6 @@ class PasswordResetBody(BaseModel):
 def email_start(
     body: EmailStartBody,
     request: Request,
-    response: Response,
     db: Session = Depends(_db),
 ):
     """Send a 6-digit verification code to the given email."""
@@ -209,13 +226,6 @@ def email_start(
         f"您的验证码是 {code}，{_VERIFY_TTL_MINUTES} 分钟内有效。\n"
         f"如果不是你本人操作，请忽略本邮件。",
     )
-
-    # Dev-mode hint: write code to a response header so the local UI can
-    # auto-fill it. Only honoured in dev and only for localhost callers.
-    if (not settings.production()
-            and request.client
-            and request.client.host in ("127.0.0.1", "::1")):
-        response.headers[_DEV_CODE_HEADER] = code
 
     return {"ok": True}
 
@@ -416,6 +426,13 @@ def password_reset(
 
 @router.get("/me")
 def me(request: Request, db: Session = Depends(_db)):
+    """Current account info, or {"isLoggedIn": false}.
+
+    A valid session cookie is NOT by itself a login: the app's anonymous
+    `user()` dependency hands one to every visitor, and its rows live in the
+    same `auth_sessions` table. So report `isLoggedIn` only when the session
+    owner actually carries a credential — email or Zhihu.
+    """
     cookie = request.cookies.get("zhishu_session")
     if not cookie:
         return {"isLoggedIn": False}
@@ -427,7 +444,133 @@ def me(request: Request, db: Session = Depends(_db)):
     ).first()
     if not row:
         return {"isLoggedIn": False}
+    user_id = row[0]
     email = db.scalar(
-        select(EmailCredential.__table__.c.email).where(EmailCredential.user_id == row[0])
+        select(EmailCredential.__table__.c.email).where(EmailCredential.user_id == user_id)
     )
-    return {"isLoggedIn": True, "userId": row[0], "email": email}
+    zhihu = db.execute(
+        select(ZhihuCredential.__table__).where(ZhihuCredential.user_id == user_id)
+    ).mappings().first()
+    if not email and not zhihu:
+        # Anonymous session — the visitor never registered or logged in.
+        return {"isLoggedIn": False}
+    # `name` is what the top bar shows. Zhihu accounts have no email, and
+    # Zhihu may omit the nickname, so fall back to a stable label rather
+    # than returning None (which would hide the signed-in header).
+    name = email or (zhihu["zhihu_name"] if zhihu else None) or "知乎用户"
+    return {"isLoggedIn": True, "userId": user_id, "email": email, "name": name}
+
+
+# ────────── Zhihu OAuth 2.0 ──────────
+
+@router.get("/zhihu/start")
+def zhihu_start(
+    request: Request,
+    response: Response,
+    db: Session = Depends(_db),
+):
+    """Step 1: generate state (CSRF), set cookie, redirect user to Zhihu.
+
+    If OAuth is not configured (no app_id/key/redirect), returns 503
+    so the front-end can hide the button gracefully.
+    """
+    if not zhihu_oauth.is_configured():
+        raise HTTPException(503, "知乎登录未配置。请联系管理员。")
+    state = zhihu_oauth.make_state()
+    zhihu_oauth.set_state_cookie(response, state)
+    return Response(
+        status_code=302,
+        headers={"Location": zhihu_oauth.build_authorize_url(state)},
+    )
+
+
+@router.get("/zhihu/callback")
+def zhihu_callback(
+    request: Request,
+    response: Response,
+    db: Session = Depends(_db),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    """Step 4: Zhihu redirects back with ?code=XXX&state=YYY.
+
+    Every parameter is optional on purpose: when the user refuses, Zhihu
+    sends ?error=access_denied&error_description=… and no code at all, so
+    requiring `code` here would surface a raw 422 instead of a real message.
+
+    1. Verify state (CSRF) and clear the cookie.
+    2. Exchange code for access_token (server-side, app_key never leaves).
+    3. Fetch the user's basic info (uid / fullname / avatar_path).
+    4. Find an existing User by zhihu_uid; otherwise create one.
+    5. Migrate anonymous data if a session cookie is present.
+    6. Issue a zhishu_session cookie.
+    """
+    state_ok = bool(state) and zhihu_oauth.verify_state(request, state)
+    zhihu_oauth.clear_state_cookie(response)  # single-use, cleared on every path
+    if error:
+        raise HTTPException(400, f"知乎授权未完成：{error_description or error}")
+    if not code:
+        raise HTTPException(400, "知乎回调缺少 code 参数，请重试。")
+    if not state_ok:
+        raise HTTPException(400, "state 校验失败，请重试。")
+
+    token_data = zhihu_oauth.exchange_code_for_token(code)
+    if not token_data or "access_token" not in token_data:
+        raise HTTPException(400, "换取 access_token 失败，请重试。")
+    access_token = token_data["access_token"]
+
+    info = zhihu_oauth.get_zhihu_user_info(access_token)
+    if not info:
+        raise HTTPException(400, "获取知乎用户信息失败。")
+
+    # Zhihu's /user schema: uid (int), fullname, avatar_path, headline, …
+    zhihu_uid = str(info.get("uid") or info.get("id") or "").strip()
+    if not zhihu_uid:
+        raise HTTPException(400, "知乎用户信息缺少 uid 字段。")
+    zhihu_name = (info.get("fullname") or info.get("name") or "").strip() or None
+    zhihu_avatar = (info.get("avatar_path") or info.get("avatar_url") or "").strip() or None
+    now = _now()
+
+    # Find existing link, or create a new User + ZhihuCredential.
+    row = db.execute(
+        select(ZhihuCredential.__table__).where(ZhihuCredential.zhihu_uid == zhihu_uid)
+    ).mappings().first()
+    if row:
+        user_id = row["user_id"]
+        db.execute(
+            update(ZhihuCredential.__table__)
+            .where(ZhihuCredential.user_id == user_id)
+            .values(zhihu_name=zhihu_name, zhihu_avatar=zhihu_avatar, updated_at=now)
+        )
+    else:
+        user_id = secrets.token_urlsafe(24)
+        db.execute(insert(User).values(id=user_id, created_at=now))
+        db.execute(insert(ZhihuCredential).values(
+            user_id=user_id,
+            zhihu_uid=zhihu_uid,
+            zhihu_name=zhihu_name,
+            zhihu_avatar=zhihu_avatar,
+            created_at=now,
+            updated_at=now,
+        ))
+
+    # Migrate anonymous session data if the user was browsing as anon.
+    anon_uid = _current_uid(db, request)
+    if anon_uid and anon_uid != user_id:
+        _migrate_anonymous_data(db, anon_uid, user_id)
+
+    # Issue a session.
+    token = secrets.token_urlsafe(48)
+    db.execute(insert(AuthSession).values(
+        id=secrets.token_urlsafe(24),
+        user_id=user_id,
+        token_hash=token_hash(token),
+        created_at=now,
+        expires_at=now + timedelta(days=_SESSION_TTL_DAYS),
+    ))
+    db.commit()
+    _set_session_cookie(response, token)
+    # Redirect to home — front-end will pick up the new session via /me.
+    return Response(status_code=302, headers={"Location": "/"})

@@ -15,6 +15,23 @@ from email.message import EmailMessage
 from typing import Protocol
 
 
+def _load_smtp_env() -> None:
+    """把 .env 里的 SMTP_* 注入 os.environ（pydantic-settings 不会自动做这件事）。
+    零依赖、自动找 .env、只加载 SMTP_ 前缀、不覆盖已有环境变量。"""
+    from pathlib import Path
+    for p in (Path.cwd() / ".env",
+              Path(__file__).parent.parent.parent / ".env",
+              Path(__file__).parent.parent.parent.parent / ".env"):
+        if p.exists():
+            for line in p.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("SMTP_") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+            return
+_load_smtp_env()
+
+
 class EmailSender(Protocol):
     def send(self, to: str, subject: str, body: str) -> None: ...
 

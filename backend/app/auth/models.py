@@ -25,3 +25,13 @@ class EmailVerification(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     attempts = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class ZhihuCredential(Base):
+    __tablename__ = "auth_zhihu_credentials"
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+    zhihu_uid = Column(String, nullable=False, unique=True)
+    zhihu_name = Column(String, nullable=True)
+    zhihu_avatar = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)

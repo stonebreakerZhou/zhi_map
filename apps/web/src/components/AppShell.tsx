@@ -29,7 +29,7 @@ export function AppShell() {
   const [settingsState, setSettingsState] = useState({ dirty: false, busy: false }), [config, setConfig] = useState<AiConfig>();
   const [dataBusy, setDataBusy] = useState(false);
   const [referenceSource, setReferenceSource] = useState<string>();
-  const [authState, setAuthState] = useState<{ isLoggedIn: boolean; email?: string | null }>({ isLoggedIn: false });
+  const [authState, setAuthState] = useState<{ isLoggedIn: boolean; email?: string | null; name?: string | null }>({ isLoggedIn: false });
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(() => localStorage.getItem('zhishu-tutorial-complete') !== '1');
   const createGuard = useRef(false);
@@ -41,7 +41,7 @@ export function AppShell() {
   const close = () => { setModal(''); setSelection(undefined); setSettingsState({ dirty: false, busy: false }); };
   const closeConversationModal = () => { close(); requestAnimationFrame(() => document.getElementById('conversation-actions-button')?.focus()); };
   // Refresh auth state whenever the modal closes (covers login/logout).
-  const refreshAuth = useCallback(() => { void api.authMe().then(s => setAuthState({ isLoggedIn: s.isLoggedIn, email: s.email ?? null })).catch(() => {}); }, []);
+  const refreshAuth = useCallback(() => { void api.authMe().then(s => setAuthState({ isLoggedIn: s.isLoggedIn, email: s.email ?? null, name: s.name ?? null })).catch(() => {}); }, []);
   useEffect(() => { refreshAuth(); }, [refreshAuth]);
   useEffect(() => {
     if (!nav) return;
@@ -75,7 +75,7 @@ export function AppShell() {
     {branch ? <MessageViewport app={app} select={setSelection} jump={jump} locate={j => void locate(j).catch(app.report)} /> : <div className="onboarding"><p className="onboarding-kicker">把一个问题想清楚</p><h2>从一个问题开始</h2><p>输入问题，得到回答；选中其中一段，就能把思路继续展开。</p><button className="primary" onClick={() => { if (config?.configured) void newTopic(); else setModal('settings'); }}>{config?.configured ? `开始新问题 · ${config.model}` : '先连接模型'}</button></div>}
   </section><Composer app={app} references={() => setModal('references')} /></>;
   return <div className={`graph-workspace mode-${mode} ${nav ? 'nav-open' : ''}`} data-cache-pages={app.cache.size} data-cache-entries={app.cache.entryCount}>
-    <a className="skip" href="#draft">跳到输入框</a><TopicNavigator app={app} navigated={navigated} accountLabel={authState.email ?? '访客'} settings={() => { setNav(false); setModal('settings'); }} account={() => { setNav(false); setModal('auth'); }} logout={authState.isLoggedIn ? () => setLogoutConfirm(true) : undefined} references={() => setModal('references')} context={() => setModal('context')} manageCurrent={() => setModal('topic')} />
+    <a className="skip" href="#draft">跳到输入框</a><TopicNavigator app={app} navigated={navigated} accountLabel={authState.name ?? authState.email ?? '访客'} settings={() => { setNav(false); setModal('settings'); }} account={() => { setNav(false); setModal('auth'); }} logout={authState.isLoggedIn ? () => setLogoutConfirm(true) : undefined} references={() => setModal('references')} context={() => setModal('context')} manageCurrent={() => setModal('topic')} />
     {nav && <button className="nav-backdrop" aria-label="收起主题导航" onClick={() => { setNav(false); document.getElementById('nav-toggle')?.focus(); }} />}
      <main className="workspace"><header className="topbar"><button id="nav-toggle" aria-expanded={nav} onClick={() => setNav(!nav)}>菜单</button><div className="conversation-heading"><strong>{branch?.title ?? '知树'}</strong></div><div className="top-actions"><button className="mode-toggle" disabled={!branch} onClick={() => setMode(mode === 'chat' ? 'graph' : 'chat')}>{mode === 'chat' ? '探索图谱' : '返回对话'}</button></div></header>
        {mode === 'graph' ? <Constellation app={app} restoreReading={setJump} modal={Boolean(modal || selection)} references={source => { setReferenceSource(source); setModal('references'); }} newTopic={() => void newTopic()}>{conversation}</Constellation> : <div className="conversation-stage">{conversation}</div>}

@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { Button, InputField } from './UI.js';
@@ -6,10 +5,31 @@ import { Button, InputField } from './UI.js';
 type Mode = 'login' | 'register' | 'password' | 'reset';
 type Step = 'form' | 'code';
 
-const DEV = import.meta.env.DEV;
+/** Zhihu's app mark — blue rounded square with the white 「知乎」 characters.
+ *  Drawn inline so the button needs no image request and works offline. */
+function ZhihuMark() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="zhihu-mark-gradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#3FA9FF" />
+          <stop offset="1" stopColor="#0084FF" />
+        </linearGradient>
+      </defs>
+      <rect width="24" height="24" rx="6" fill="url(#zhihu-mark-gradient)" />
+      <text
+        x="12" y="12.4" textAnchor="middle" dominantBaseline="central"
+        fill="#ffffff" fontSize="10" fontWeight="700"
+        fontFamily="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif"
+      >
+        知乎
+      </text>
+    </svg>
+  );
+}
 
 export function AuthModal({ close }: { close: () => void }) {
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [mode, setMode] = useState<Mode>('login');
   const [step, setStep] = useState<Step>('form');
   const [email, setEmail] = useState('');
@@ -18,7 +38,6 @@ export function AuthModal({ close }: { close: () => void }) {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [hint, setHint] = useState('');
-  const [devCode, setDevCode] = useState('');
   const [busy, setBusy] = useState(false);
   const guard = useRef(false);
 
@@ -44,7 +63,6 @@ export function AuthModal({ close }: { close: () => void }) {
     setOldPassword('');
     setNewPassword('');
     setHint('');
-    setDevCode('');
   };
 
   const startCode = async () => {
@@ -52,15 +70,10 @@ export function AuthModal({ close }: { close: () => void }) {
     guard.current = true;
     setBusy(true);
     setHint('');
-    setDevCode('');
     try {
-      const { headers } = await api.emailStart(email.trim());
-      const dev = headers.get('x-dev-auth-code');
-      if (dev) setDevCode(dev);
+      await api.emailStart(email.trim());
       const subject = mode === 'reset' ? '【知树】密码重置验证码' : '【知树】邮箱验证码';
-      setHint(DEV
-        ? `开发模式：${subject}已发送，下方会自动填充；后端终端也会打印一次。`
-        : `${subject}已发送至你的邮箱，请查收。`);
+      setHint(`${subject}已发送至你的邮箱，请查收。`);
       setStep('code');
     } catch (e) {
       setHint((e as Error).message);
@@ -125,11 +138,28 @@ export function AuthModal({ close }: { close: () => void }) {
   );
 
   return <>
+    {loggedIn !== true && (
+      <a
+        href="/api/auth/zhihu/start"
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          width: '100%', boxSizing: 'border-box',
+          padding: '10px 14px', marginBottom: 12,
+          background: 'var(--accent)', color: 'var(--on-accent)',
+          borderRadius: 8,
+          textDecoration: 'none', fontSize: 14, fontWeight: 600,
+          boxShadow: '0 5px 14px rgba(78, 80, 168, .2)',
+        }}
+      >
+        <ZhihuMark />
+        用知乎账号登录
+      </a>
+    )}
     <div className="toolbar" role="tablist" aria-label="账户操作" style={{ marginBottom: 8 }}>
       {tab('login', '登录')}
       {tab('register', '邮箱注册')}
       {tab('reset', '忘记密码')}
-      {loggedIn && tab('password', '修改密码')}
+      {loggedIn === true && tab('password', '修改密码')}
     </div>
 
     {mode === 'password' ? (
@@ -143,9 +173,6 @@ export function AuthModal({ close }: { close: () => void }) {
       <>
         <p className="config-status">重置验证码已发送至 {email}</p>
         <InputField label="验证码（6 位）" id="auth-code" inputMode="numeric" autoComplete="one-time-code" required pattern="\d{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value)} />
-        {devCode && DEV && (
-          <p style={{ margin: '4px 0' }}><Button onClick={() => setCode(devCode)}>开发模式：自动填充验证码 {devCode}</Button></p>
-        )}
         <InputField label="新密码（至少 8 位）" id="auth-new-password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
         <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>重置成功后该账号所有设备会自动登出。</p>
       </>
@@ -153,9 +180,6 @@ export function AuthModal({ close }: { close: () => void }) {
       <>
         <p className="config-status">验证码已发送至 {email}</p>
         <InputField label="验证码（6 位）" id="auth-code" inputMode="numeric" autoComplete="one-time-code" required pattern="\d{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value)} />
-        {devCode && DEV && (
-          <p style={{ margin: '4px 0' }}><Button onClick={() => setCode(devCode)}>开发模式：自动填充验证码 {devCode}</Button></p>
-        )}
         <InputField label="设置密码（至少 8 位）" id="auth-password" type="password" required minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} />
       </>
     ) : (
@@ -186,11 +210,5 @@ export function AuthModal({ close }: { close: () => void }) {
         {mode === 'login' ? '登录' : mode === 'password' ? '更新密码' : mode === 'reset' ? (step === 'form' ? '发送重置验证码' : '完成重置') : (step === 'form' ? '发送验证码' : '完成注册')}
       </Button>
     </div>
-
-    {DEV && (
-      <p style={{ marginTop: 12, fontSize: 12, color: 'var(--muted-2)' }}>
-        开发模式：验证码会在后端终端 stdout 打印。生产部署时不会显示此提示。
-      </p>
-    )}
   </>;
 }
