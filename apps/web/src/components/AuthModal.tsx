@@ -5,8 +5,31 @@ import { Button, InputField } from './UI.js';
 type Mode = 'login' | 'register' | 'password' | 'reset';
 type Step = 'form' | 'code';
 
+/** Zhihu's app mark — blue rounded square with the white 「知乎」 characters.
+ *  Drawn inline so the button needs no image request and works offline. */
+function ZhihuMark() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <defs>
+        <linearGradient id="zhihu-mark-gradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#3FA9FF" />
+          <stop offset="1" stopColor="#0084FF" />
+        </linearGradient>
+      </defs>
+      <rect width="24" height="24" rx="6" fill="url(#zhihu-mark-gradient)" />
+      <text
+        x="12" y="12.4" textAnchor="middle" dominantBaseline="central"
+        fill="#ffffff" fontSize="10" fontWeight="700"
+        fontFamily="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif"
+      >
+        知乎
+      </text>
+    </svg>
+  );
+}
+
 export function AuthModal({ close }: { close: () => void }) {
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [mode, setMode] = useState<Mode>('login');
   const [step, setStep] = useState<Step>('form');
   const [email, setEmail] = useState('');
@@ -115,11 +138,28 @@ export function AuthModal({ close }: { close: () => void }) {
   );
 
   return <>
+    {loggedIn !== true && (
+      <a
+        href="/api/auth/zhihu/start"
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          width: '100%', boxSizing: 'border-box',
+          padding: '10px 14px', marginBottom: 12,
+          background: 'var(--accent)', color: 'var(--on-accent)',
+          borderRadius: 8,
+          textDecoration: 'none', fontSize: 14, fontWeight: 600,
+          boxShadow: '0 5px 14px rgba(78, 80, 168, .2)',
+        }}
+      >
+        <ZhihuMark />
+        用知乎账号登录
+      </a>
+    )}
     <div className="toolbar" role="tablist" aria-label="账户操作" style={{ marginBottom: 8 }}>
       {tab('login', '登录')}
       {tab('register', '邮箱注册')}
       {tab('reset', '忘记密码')}
-      {loggedIn && tab('password', '修改密码')}
+      {loggedIn === true && tab('password', '修改密码')}
     </div>
 
     {mode === 'password' ? (
