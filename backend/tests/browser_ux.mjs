@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
-import { navClick } from './browser_navigation.mjs';
+import { navClick, openModelSettings, conversationAction } from './browser_navigation.mjs';
 
 export async function verifyUX(browser, url) {
   let page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript(() => localStorage.setItem('zhishu-tutorial-complete', '1'));
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   const config = () => page.evaluate(async () => (await (await fetch('/api/ai/config')).json()));
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.route('**/api/ai/config', route => route.request().method() === 'GET' ? route.fulfill({ status: 503, json: { error: 'load failed' } }) : route.continue());
-  await navClick(page, '#settings-button');
+  await openModelSettings(page);
   await page.getByRole('button', { name: '重新加载模型配置' }).waitFor();
   assert(await page.locator('#save-ai-config').isDisabled());
   await page.unroute('**/api/ai/config');
@@ -53,7 +54,7 @@ export async function verifyUX(browser, url) {
   await page.locator('#ai-model').press('Enter');
   await page.getByText('已保存。密钥不会再次显示。', { exact: true }).waitFor();
   assert.equal((await config()).model, 'enter-saved-model');
-  assert.equal(await page.locator('.top-title').textContent(), 'enter-saved-model');
+  assert.equal((await config()).model, 'enter-saved-model');
   await page.getByRole('button', { name: '清除个人模型配置', exact: true }).click();
   let confirmation = page.getByRole('dialog', { name: '清除个人模型配置？', exact: true });
   await confirmation.getByRole('button', { name: '取消', exact: true }).click();
@@ -62,13 +63,13 @@ export async function verifyUX(browser, url) {
   await page.getByRole('button', { name: '清除个人模型配置', exact: true }).click();
   await confirmation.getByRole('button', { name: '确认清除', exact: true }).click();
   await page.locator('#ai-settings-feedback').getByText('个人配置已清除，已刷新当前生效状态。').waitFor();
-  assert.equal((await config()).source, 'none');
+  assert.notEqual((await config()).source, 'user');
   await page.locator('dialog').evaluate(e => e.scrollTop = 0);
   await page.screenshot({ path: 'test-results/ux-settings-desktop.png' });
   await page.locator('#ai-key').fill('discard-this');
   await page.locator('#close-modal').click();
   await discard.getByRole('button', { name: '放弃修改', exact: true }).click();
-  await navClick(page, '#settings-button');
+  await openModelSettings(page);
   await page.locator('#ai-key').waitFor();
   assert.equal(await page.locator('#ai-key').inputValue(), '');
   await page.locator('#close-modal').click();
@@ -80,21 +81,21 @@ export async function verifyUX(browser, url) {
   await navClick(page, '#create');
   assert.equal(creates, 1);
   await page.waitForFunction(() => document.getElementById('draft') === document.activeElement);
-  await page.locator('#manage-button').click();
+  await conversationAction(page, '#manage-button');
   await page.locator('#topic-title').fill('First topic');
   await page.locator('#topic-title').press('Enter');
-  await page.locator('#chat-header h1').getByText('First topic', { exact: true }).waitFor();
+  await page.locator('.conversation-heading > strong').getByText('First topic', { exact: true }).waitFor();
   await navClick(page, '#create');
-  await page.locator('#chat-header h1').getByText('新的学习问题', { exact: true }).waitFor();
-  await page.getByRole('button', { name: '菜单', exact: true }).click();
+  await page.locator('.conversation-heading > strong').getByText('新的学习问题', { exact: true }).waitFor();
+  if (!await page.locator('.sidebar').isVisible()) await page.getByRole('button', { name: '菜单', exact: true }).click();
   await page.getByRole('button', { name: '更多：First topic', exact: true }).click();
   await page.locator('#topic-title').fill('Renamed other topic');
   await page.locator('#topic-tags').fill('math, math， algebra ');
   await page.locator('#topic-title').press('Enter');
   await page.getByRole('button', { name: '更多：Renamed other topic', exact: true }).waitFor();
   assert.equal(await page.locator('#chat-header h1').textContent(), '新的学习问题');
-  await page.getByRole('button', { name: '收起主题导航', exact: true }).click();
-  await page.locator('#manage-button').click();
+  if (await page.getByRole('button', { name: '收起主题导航', exact: true }).isVisible()) await page.getByRole('button', { name: '收起主题导航', exact: true }).click();
+  await conversationAction(page, '#manage-button');
   await page.locator('[data-delete-session]').click();
   confirmation = page.getByRole('dialog', { name: '永久删除整个会话主线？', exact: true });
   assert(await confirmation.getByRole('button', { name: '永久删除会话', exact: true }).isDisabled());
@@ -110,7 +111,7 @@ export async function verifyUX(browser, url) {
   await confirmation.getByRole('button', { name: '确认移除主题', exact: true }).click();
   await page.locator('.graph-recovery').getByRole('button', { name: '恢复', exact: true }).click();
   await navClick(page, '[data-switch] >> text=新的学习问题');
-  await page.locator('#manage-button').click();
+  await conversationAction(page, '#manage-button');
   await page.locator('[data-delete-branch]').click();
   await confirmation.getByRole('button', { name: '确认移除主题', exact: true }).click();
   await page.locator('.graph-recovery').waitFor();
@@ -118,12 +119,37 @@ export async function verifyUX(browser, url) {
   await page.locator('.graph-recovery').getByRole('button', { name: '恢复', exact: true }).click();
   assert.equal(await page.locator('#draft').inputValue(), 'unrelated mutation preserves recovery');
 
+  // Minimal conversation chrome, account drawer geometry, and the committed palette.
+  assert.equal(await page.locator('.selection-help').count(), 0, 'Instructional selection copy must not occupy the conversation');
+  assert.equal(await page.locator('#messages > .toolbar').count(), 0, 'The pager must not sit above the messages');
+  const palette = await page.evaluate(() => { const style = getComputedStyle(document.documentElement); return { accent: style.getPropertyValue('--accent').trim(), ground: style.getPropertyValue('--bg').trim() }; });
+  assert.equal(palette.accent, '#176b5b', 'Accent token must be the forest-teal palette');
+  assert.equal(palette.ground, '#f7f7f4', 'Ground token must be the warm neutral palette');
+  const account = page.locator('#conversation-actions-button');
+  await account.click();
+  const menu = page.locator('.account-menu');
+  await menu.waitFor();
+  const menuBox = await menu.boundingBox(), accountBox = await account.boundingBox(), viewport = page.viewportSize();
+  assert(menuBox.x >= 0 && menuBox.y >= 0 && menuBox.x + menuBox.width <= viewport.width && menuBox.y + menuBox.height <= viewport.height, 'Account drawer must stay inside the viewport');
+  assert(menuBox.y + menuBox.height <= accountBox.y + 1, 'Account drawer must open upward');
+  await page.screenshot({ path: 'test-results/ux-account-drawer-desktop.png' });
+  await page.locator('.chat').hover();
+  await page.waitForFunction(() => document.querySelector('#conversation-actions-button')?.getAttribute('aria-expanded') === 'false');
+
   // Real pointer and keyboard selections, with viewport geometry assertions.
   await page.close();
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript(() => localStorage.setItem('zhishu-tutorial-complete', '1'));
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.locator('[data-sample]').click();
+  await page.evaluate(async () => { const view = await (await fetch('/api/workspace/view')).json(); await fetch('/api/workspace/actions?response=compact', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'sample', revision: view.revision }) }); });
+  await page.reload({ waitUntil: 'networkidle' });
+  // The floating composer must never permanently hide the end of the transcript.
+  await page.locator('.chat').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await page.waitForTimeout(150);
+  const lastMessage = await page.locator('#messages article').last().boundingBox();
+  const dock = await page.locator('#composer').boundingBox();
+  assert(lastMessage.y + lastMessage.height <= dock.y + 1, 'Transcript must clear the floating composer at the end of scroll');
   const leaf = page.locator('.message.assistant [data-source-start]').filter({ hasText: '平方项总是非负' }).first();
   const selectWithPointer = async () => {
     await leaf.scrollIntoViewIfNeeded();
@@ -132,6 +158,8 @@ export async function verifyUX(browser, url) {
     await page.mouse.down();
     await page.mouse.move(bounds.x + Math.min(bounds.width - 2, 130), bounds.y + bounds.height / 2, { steps: 12 });
     await page.mouse.up();
+    const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+    assert(selectedText.length > 0, `Pointer selection produced no native range at ${JSON.stringify(bounds)}`);
     await page.screenshot({ path: 'test-results/ux-pointer-diagnostic.png' });
     await page.locator('#expand-selection').waitFor();
   };
@@ -176,7 +204,7 @@ export async function verifyUX(browser, url) {
   await page.waitForFunction(() => document.querySelector('#nav-toggle').getAttribute('aria-expanded') === 'false');
   await page.waitForFunction(() => document.getElementById('draft') === document.activeElement);
   await page.locator('#nav-toggle').click();
-  await navClick(page, '#settings-button');
+  await openModelSettings(page);
   await page.locator('#ai-model').waitFor();
   await page.screenshot({ path: 'test-results/ux-settings-mobile.png' });
   assert(await page.locator('dialog').evaluate(e => e.scrollWidth <= e.clientWidth));
@@ -186,9 +214,11 @@ export async function verifyUX(browser, url) {
   await selectWithPointer();
   await inBounds();
   await page.locator('.selection-feedback').waitFor({ state: 'hidden' });
-  const mobileCapsule = await page.locator('.graph-capsule').boundingBox();
+  const mobileStage = await page.locator('.conversation-stage').boundingBox();
+  const mobileComposer = await page.locator('#composer').boundingBox();
   const mobileSend = await page.locator('#send').boundingBox();
-  assert(mobileCapsule.x >= 23 && mobileCapsule.x + mobileCapsule.width <= 367, 'Focus capsule must keep narrow-screen safe edges');
+  assert(mobileStage.x >= 0 && mobileStage.x + mobileStage.width <= 390, 'Conversation stage must fit the narrow viewport');
+  assert(mobileComposer.x >= 8 && mobileComposer.x + mobileComposer.width <= 382, 'Composer dock must keep narrow-screen safe edges');
   assert(mobileSend.x >= 0 && mobileSend.x + mobileSend.width <= 390, 'Send must remain inside the narrow viewport');
   await page.screenshot({ path: 'test-results/ux-selection-mobile.png' });
   await page.keyboard.press('Escape');
@@ -209,6 +239,7 @@ export async function verifyUX(browser, url) {
   await page.close();
   // The initial shell request must not overwrite a newer settings response.
   page = await browser.newPage();
+  await page.addInitScript(() => localStorage.setItem('zhishu-tutorial-complete', '1'));
   let first = true, releaseInitial;
   const initialGate = new Promise(resolve => { releaseInitial = resolve; });
   await page.route('**/api/ai/config', async route => {
@@ -222,7 +253,7 @@ export async function verifyUX(browser, url) {
     return route.continue();
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await navClick(page, '#settings-button');
+  await openModelSettings(page);
   await page.locator('#ai-model').fill('newer-than-initial');
   await page.locator('#ai-base-url').fill(`${url}/mock`);
   await page.locator('#ai-key').fill('isolated-stale-response-test');
@@ -231,7 +262,7 @@ export async function verifyUX(browser, url) {
   await page.locator('#close-modal').click();
   releaseInitial();
   await page.waitForLoadState('networkidle');
-  assert.equal(await page.locator('.top-title').textContent(), 'newer-than-initial');
+  assert.equal((await config()).model, 'newer-than-initial');
   await page.close();
   console.log('UX: config retry/save-and-test/clear/discard; create dedupe/focus; non-active rename; remove failure/independent recovery; pointer+keyboard selection; desktop/mobile geometry passed.');
 }

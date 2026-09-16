@@ -20,7 +20,8 @@ export function Recovery({ app, anchor }: { app: WorkspaceController; anchor?: P
   useEffect(() => {
     const clamp = () => {
       const rect = bubble.current?.getBoundingClientRect();
-      setPoint({ x: Math.max(16, Math.min(anchor?.x ?? 16, innerWidth - (rect?.width ?? 360) - 16)), y: Math.max(112, Math.min((anchor?.y ?? 160) - (rect?.height ?? 80) - 8, innerHeight * .5)) });
+      const width = rect?.width ?? 360, height = rect?.height ?? 80;
+      setPoint({ x: Math.max(16, Math.min(anchor?.x ?? innerWidth - width - 16, innerWidth - width - 16)), y: Math.max(72, Math.min(anchor ? anchor.y - height - 8 : innerHeight - height - 72, innerHeight - height - 16)) });
     };
     clamp(); window.addEventListener('resize', clamp); return () => window.removeEventListener('resize', clamp);
   }, [current?.operationId, anchor]);
@@ -32,7 +33,7 @@ export function Recovery({ app, anchor }: { app: WorkspaceController; anchor?: P
     finally { setBusy(false); }
   };
   return <>
-    <button onClick={() => setOpen(true)}>最近移除（{count}）</button>
+    {(count > 0 || current) && <button onClick={() => setOpen(true)}>最近移除（{count}）</button>}
     {restored && <button title={restored.targets.map(t => t.title).join('、')} onClick={() => {
       const id = restored.targets[0]?.id;
       if (id) void app.action({ type: 'switch', branchId: id }).then(() => setRestored(undefined)).catch(app.report);

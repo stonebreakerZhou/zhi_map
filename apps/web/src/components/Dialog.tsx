@@ -27,5 +27,5 @@ export function ConfirmDialog(props: { title: string; close: () => void; confirm
 }
 
 export function Pager({ cursor, next, change }: { cursor: number; next: number | null; change: (cursor: number) => void }) {
-  return <div className="toolbar"><button disabled={cursor < 0} onClick={() => change(Math.max(-1, cursor - 40))}>上一页</button><span>每页最多 40 条</span><button disabled={next === null} onClick={() => next !== null && change(next)}>下一页</button></div>;
+  return <nav className="toolbar pager" aria-label="历史消息分页"><button disabled={cursor < 0} onClick={() => change(Math.max(-1, cursor - 40))}>上一页</button><button disabled={next === null} onClick={() => next !== null && change(next)}>下一页</button></nav>;
 }

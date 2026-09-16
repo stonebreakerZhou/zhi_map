@@ -2,8 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type P
 import type { WorkspaceController } from '../controller.js';
 import { Dialog, ConfirmDialog } from '../components/Dialog.js';
 import { graphApi, type GraphEdge, type GraphNode, type Point, type Projection } from './api.js';
-import { advance, begin, distance, intersects, rectangle, screen, world, zoomAt, type Box, type Camera, type Gesture } from './gestures.js';
-import { Recovery } from './Recovery.js';
+import { advance, begin, intersects, rectangle, screen, world, zoomAt, type Box, type Camera, type Gesture } from './gestures.js';
 import { allocate, type Detail } from './geometry.js';
 import { readSelection } from '../selection.js';
 import type { Jump } from '../components/MessageViewport.js';
@@ -44,9 +43,8 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const pinch = useRef<{ distance: number; center: Point; camera: Camera } | undefined>(undefined);
   const [relation, setRelation] = useState<Relation>(), [edge, setEdge] = useState<GraphEdge>();
   const [removeIds, setRemoveIds] = useState<string[]>(), [menu, setMenu] = useState<{ id?: string; point: Point }>();
-  const [anchor, setAnchor] = useState<Point>(), [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
   const pressed = useRef(false), composing = useRef(false), typed = useRef(0), hoverTimer = useRef(0), autoTimer = useRef(0), holdTimer = useRef(0), hoverCandidate = useRef<string | undefined>(undefined);
-  const panRef = useRef<{ pointerId: number; origin: Point; camera: Camera; moved: boolean } | undefined>(undefined);
   const suppress = useRef(false), lastActive = useRef<string | undefined>(undefined), autoRef = useRef({ modal, locked, automatic, busy });
   const branchBefore = useRef(app.branch?.id);
   const historyBranch = useRef<string | undefined>(undefined);
@@ -214,15 +212,17 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         cancelAnimationFrame(animation.current);
         setCam({ x: size.width / 2 - active.x, y: size.height / 2 - active.y, scale: 1 });
       }
-      else setCam({ x: size.width * .28 - active.x * .4, y: size.height * .4 - active.y * .4, scale: .4 });
+      else {
+        const scale = view === 'Focus' ? 1 : view === 'Peek' ? peek : .4;
+        setCam({ x: size.width * (view === 'Overview' ? .28 : view === 'Peek' ? .4 : .5) - active.x * scale, y: size.height * (view === 'Overview' ? .4 : .5) - active.y * scale, scale });
+      }
     }
-  }, [active?.id, app.branch?.id]);
+  }, [active?.id, app.branch?.id, view]);
   const cancel = () => {
     clearTimeout(holdTimer.current); clearTimeout(hoverTimer.current); clearTimeout(autoTimer.current);
     const g = gestureRef.current; gestureRef.current = undefined; setGesture(undefined);
     if (g && host.current?.hasPointerCapture(g.pointerId)) host.current.releasePointerCapture(g.pointerId);
     pressed.current = false;
-    panRef.current = undefined;
     pinch.current = undefined; touches.current.clear();
   };
   useEffect(() => {
@@ -236,11 +236,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const hitBoxes = (): Box[] => Array.from(host.current?.querySelectorAll<HTMLElement>('.graph-node-header[data-graph-node]') ?? []).map(el => {
     const r = el.getBoundingClientRect(), h = host.current!.getBoundingClientRect();
     const visible = document.elementFromPoint(Math.max(h.left + 1, Math.min(h.right - 1, r.left + r.width / 2)), Math.max(h.top + 1, Math.min(h.bottom - 1, r.top + r.height / 2)));
-    const occluded = Array.from(host.current!.querySelectorAll<HTMLElement>('.graph-capsule, .graph-context, .graph-query, .graph-children-panel, .graph-crowded, .graph-selection, .bottom, .selection-toolbar')).some(overlay => {
-      const b = overlay.getBoundingClientRect();
-      return b.width > 0 && b.height > 0 && r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top;
-    });
-    return { id: !occluded && visible && el.contains(visible) ? el.dataset.graphNode ?? '' : '', left: r.left - h.left, right: r.right - h.left, top: r.top - h.top, bottom: r.bottom - h.top };
+    return { id: visible && el.contains(visible) ? el.dataset.graphNode ?? '' : '', left: r.left - h.left, right: r.right - h.left, top: r.top - h.top, bottom: r.bottom - h.top };
   }).filter(b => b.id && b.right > 0 && b.left < size.width && b.bottom > 0 && b.top < size.height);
   const syncGesture = (g: Gesture) => {
     const previous = gestureRef.current;
@@ -263,12 +259,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     const canvasPanTarget = !interactiveTarget && (!protectedElement(e.target) || Boolean(capsuleTarget));
     const protectedTarget = protectedElement(e.target) && !canvasPanTarget;
     if (protectedTarget || (e.button !== 0 && e.button !== 2) || busy || app.removalBusy) return;
-    if (canvasPanTarget) {
-      e.preventDefault();
-      panRef.current = { pointerId: e.pointerId, origin: graphPoint(e), camera: { ...cameraRef.current }, moved: false };
-      host.current?.setPointerCapture(e.pointerId);
-      return;
-    }
+    if (canvasPanTarget) e.preventDefault();
     if (e.pointerType === 'touch') {
       touches.current.set(e.pointerId, graphPoint(e));
       if (touches.current.size === 2) {
@@ -287,9 +278,10 @@ export function Constellation({ app, children, references, modal, newTopic, rest
     const connector = e.target instanceof Element && Boolean(e.target.closest('[data-connector]'));
     const g = begin(e.pointerId, e.button, graphPoint(e), performance.now(), hitBoxes(), { ...cameraRef.current }, source, organize, connector);
     syncGesture(g);
+    if (!host.current?.hasPointerCapture(e.pointerId)) host.current?.setPointerCapture(e.pointerId);
     if (e.button === 0) holdTimer.current = window.setTimeout(() => { const current = gestureRef.current; if (current?.phase === 'pressCandidate') syncGesture(advance(current, current.point, performance.now())); }, 355);
   };
-  const hover = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const hover = (e: { pointerId: number; clientX: number; clientY: number; target: EventTarget | null }) => {
      clearTimeout(autoTimer.current);
     if (pinch.current && touches.current.has(e.pointerId)) {
       touches.current.set(e.pointerId, graphPoint(e));
@@ -301,12 +293,12 @@ export function Constellation({ app, children, references, modal, newTopic, rest
       }
       return;
     }
-    if (panRef.current?.pointerId === e.pointerId) {
-      const pan = panRef.current;
-      const point = graphPoint(e);
-      pan.moved = pan.moved || distance(pan.origin, point) >= 8;
-      const next = { ...pan.camera, x: pan.camera.x + point.x - pan.origin.x, y: pan.camera.y + point.y - pan.origin.y };
-      setCam(next, false);
+    const g = gestureRef.current;
+    if (g && g.pointerId === e.pointerId) {
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const next = advance(g, graphPoint(e), performance.now(), protectedElement(target));
+      syncGesture(next);
+      if (next.phase === 'pan') setCam({ ...g.camera, x: g.camera.x + next.point.x - g.origin.x, y: g.camera.y + next.point.y - g.origin.y }, false);
       return;
     }
     if (view === 'Overview' && !protectedElement(e.target)) {
@@ -324,14 +316,6 @@ export function Constellation({ app, children, references, modal, newTopic, rest
       }
     }
     if (view === 'Overview' && hoveredNode && capsule.current && capsule.current.contains(e.target as Node)) setHoveredNode(undefined);
-    const g = gestureRef.current;
-    if (g && g.pointerId === e.pointerId) {
-      const target = document.elementFromPoint(e.clientX, e.clientY);
-      const next = advance(g, graphPoint(e), performance.now(), protectedElement(target));
-      syncGesture(next);
-      if (next.phase === 'pan') setCam({ ...g.camera, x: g.camera.x + next.point.x - g.origin.x, y: g.camera.y + next.point.y - g.origin.y }, false);
-      return;
-    }
     if (!automatic || locked || autoRef.current.modal || busy || app.removalBusy || pressed.current || composing.current || performance.now() - typed.current < 800 || (e.target instanceof Element && e.target.closest('.bottom, [data-graph-protected]')) || protectedElement(e.target) && !(e.target instanceof Element && e.target.closest('.graph-capsule'))) return;
     if (!capsule.current || !app.branch || view === 'Overview') return;
     const r = capsule.current.getBoundingClientRect();
@@ -343,21 +327,16 @@ export function Constellation({ app, children, references, modal, newTopic, rest
       if (!pressed.current && !composing.current && performance.now() - typed.current >= 800 && !protection.modal && !protection.locked && protection.automatic && !protection.busy) changeView(target);
     }, target === 'Peek' ? 240 : 150);
   };
+  useEffect(() => {
+    const move = (event: PointerEvent) => hover(event);
+    window.addEventListener('pointermove', move, true);
+    return () => window.removeEventListener('pointermove', move, true);
+  }, [view, projection, automatic, locked, busy, app.removalBusy, hoveredNode]);
   const remove = async (ids: string[], point?: Point) => {
-    const r = host.current?.getBoundingClientRect();
-    setAnchor(point && { x: point.x + (r?.left ?? 0), y: point.y + (r?.top ?? 0) });
     try { await app.remove(ids); setSelected([]); setRefresh(n => n + 1); }
     catch (e) { app.report(e); setError(e instanceof Error ? e.message : String(e)); }
   };
   const up = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (panRef.current?.pointerId === e.pointerId) {
-      if (panRef.current.moved) suppress.current = true;
-      setCamera(cameraRef.current);
-      if (host.current?.hasPointerCapture(e.pointerId)) host.current.releasePointerCapture(e.pointerId);
-      panRef.current = undefined;
-      pressed.current = false;
-      return;
-    }
     if (pinch.current) { const ids = [...touches.current.keys()]; cancel(); for (const id of ids) if (host.current?.hasPointerCapture(id)) host.current.releasePointerCapture(id); setCamera(cameraRef.current); return; }
     touches.current.delete(e.pointerId);
     pressed.current = false; const g = gestureRef.current;
@@ -410,9 +389,9 @@ export function Constellation({ app, children, references, modal, newTopic, rest
 
   return <>
      <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerLeave={(e) => { const related = e.relatedTarget; if (related instanceof Node && e.currentTarget.contains(related)) return; setToolsOpen(false); }}>
+        <button className="graph-primary" disabled={!app.branch} onClick={() => changeView(view === 'Focus' ? 'Overview' : 'Focus')}>{view === 'Focus' ? '查看图谱' : '聚焦当前'}</button>
         <div className="zoom-controls" aria-label="图谱缩放"><button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button><span>{Math.round(camera.scale * 100)}%</span><button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button></div>
         <button aria-expanded={toolsOpen} aria-controls="graph-options" onClick={() => setToolsOpen(open => !open)}>工具</button>
-        <Recovery app={app} anchor={anchor} />
         <button id="refresh" onClick={() => void app.flush().then(() => { app.cache.clear(); return app.load(); }).catch(app.report)}>刷新</button>
         {toolsOpen && <div id="graph-options" className="graph-options">
          <button onClick={newTopic}>新的学习问题</button><button disabled={!active} onClick={() => changeView('Focus')}>聚焦当前</button>
@@ -431,8 +410,8 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         <p>空白立即拖动平移；长按 350ms 框选。标题长按连线，右键划过主题后松开移除；可恢复。正文保持原生选区。</p>
        </div>}
      </div>
-    <div ref={host} className={`constellation view-${view.toLowerCase()}`} data-view={view} data-node-count={drawn.length} data-edge-count={projection?.edges.length ?? 0}
-      onPointerDown={down} onPointerMove={hover} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={() => { if (gestureRef.current) cancel(); }}
+    <div ref={host} className={`constellation view-${view.toLowerCase()}`} data-view={view} data-node-count={drawn.length} data-edge-count={projection?.edges.length ?? 0} data-gesture-phase={gesture?.phase ?? 'idle'} data-gesture-boxes={gesture?.boxes.length ?? 0} data-selection-count={selected.length}
+      onPointerDown={down} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={() => { if (gestureRef.current) cancel(); }}
        onPointerLeave={() => { clearTimeout(hoverTimer.current); clearTimeout(autoTimer.current); hoverCandidate.current = undefined; setHoveredNode(undefined); setCursorHint(undefined); }}
       onInputCapture={() => { typed.current = performance.now(); clearTimeout(hoverTimer.current); }}
       onCompositionStartCapture={() => { composing.current = true; clearTimeout(hoverTimer.current); }}

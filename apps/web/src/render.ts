@@ -31,17 +31,10 @@ function text(source: string, start: number) {
   return html + span(source.slice(cursor), start + cursor);
 }
 
-export function renderMarkdown(source: string) {
-  const blocks: string[] = [];
-  const prepared = source.replace(/(^|\n)\s*(?:\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\])\s*(?=\n|$)/g, (_match, prefix: string, dollars?: string, brackets?: string) => {
-    const index = blocks.length;
-    const value = dollars ?? brackets ?? '';
-    blocks.push(`<span class="math math-display" data-math-start="0" data-math-end="0">${katex.renderToString(value, { displayMode: true, throwOnError: false, trust: false })}</span>`);
-    return `${prefix}MATHBLOCKTOKEN${index}\n`;
-  });
+function lines(source: string, base: number) {
   let offset = 0;
-  const html = prepared.split(/(?<=\n)/).map((line) => {
-    const start = offset; offset += line.length;
+  return source.split(/(?<=\n)/).map((line) => {
+    const start = base + offset; offset += line.length;
     const trimmed = line.replace(/\n$/, '');
     const heading = /^(#{1,3})\s+/.exec(trimmed);
     if (heading) { const content = trimmed.slice(heading[0].length); return `<h${heading[1].length}>${inline(content, start + heading[0].length)}</h${heading[1].length}>`; }
@@ -49,7 +42,18 @@ export function renderMarkdown(source: string) {
     if (/^>\s?/.test(trimmed)) { const prefix = trimmed.match(/^>\s?/)![0]; return `<blockquote>${inline(trimmed.slice(prefix.length), start + prefix.length)}</blockquote>`; }
     return trimmed ? `<p>${inline(trimmed, start)}</p>` : '';
   }).join('');
-  let sanitized = DOMPurify.sanitize(html, { ADD_ATTR: ['data-source-start', 'data-math-start', 'data-math-end', 'target'], FORBID_TAGS: ['img', 'style', 'form', 'input'] });
-  blocks.forEach((block, index) => { sanitized = sanitized.replace(`MATHBLOCKTOKEN${index}`, block); });
-  return sanitized;
+}
+
+export function renderMarkdown(source: string) {
+  let html = '', cursor = 0;
+  const blocks = /\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]/g;
+  for (const match of source.matchAll(blocks)) {
+    const index = match.index!;
+    html += lines(source.slice(cursor, index), cursor);
+    const value = match[1] ?? match[2] ?? '';
+    html += `<span class="math math-display" data-math-start="${index}" data-math-end="${index + match[0].length}">${katex.renderToString(value, { displayMode: true, throwOnError: false, trust: false })}</span>`;
+    cursor = index + match[0].length;
+  }
+  html += lines(source.slice(cursor), cursor);
+  return DOMPurify.sanitize(html, { ADD_ATTR: ['data-source-start', 'data-math-start', 'data-math-end', 'target'], FORBID_TAGS: ['img', 'style', 'form', 'input'] });
 }

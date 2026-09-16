@@ -4,6 +4,7 @@ import os from 'node:os';
 
 export async function verifyGraph(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.addInitScript(() => localStorage.setItem('zhishu-tutorial-complete', '1'));
   const errors = [], sizes = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('response', async r => { if (new URL(r.url()).pathname === '/api/graph') { try { sizes.push((await r.body()).length); } catch {} } });
@@ -12,8 +13,11 @@ export async function verifyGraph(browser, url) {
     const value = await response.json(); if (!response.ok) throw Error(JSON.stringify(value)); return value;
   }, { path, body });
   await page.goto(url, { waitUntil: 'networkidle' });
+  await page.evaluate(async () => { const view = await (await fetch('/api/workspace/view')).json(); await fetch('/api/workspace/actions?response=compact', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'sample', revision: view.revision }) }); });
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: '探索图谱', exact: true }).click();
   await page.locator('[data-view="Overview"]').waitFor();
-  await page.locator('[data-sample]').click();
+  await page.getByRole('button', { name: '聚焦当前', exact: true }).click();
   await page.locator('[data-view="Focus"]').waitFor();
   await page.locator('.graph-capsule .message').first().waitFor();
   const seedView = await api('/api/workspace/view');
@@ -36,8 +40,10 @@ export async function verifyGraph(browser, url) {
   const v = await api('/api/workspace/view');
   await api('/api/workspace/actions?response=compact', { type: 'switch', branchId: root.id, revision: v.revision });
   await page.reload({ waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: '继续对话', exact: true }).first().click();
-  await page.waitForTimeout(320);
+  await page.getByRole('button', { name: '探索图谱', exact: true }).click();
+  await page.locator('[data-view="Overview"]').waitFor();
+  await page.getByRole('button', { name: '聚焦当前', exact: true }).click();
+  await page.waitForTimeout(600);
   await page.screenshot({ path: 'test-results/graph-focus.png' });
   const focusedBox = await page.locator('.graph-capsule').boundingBox();
   const stageBox = await page.locator('.constellation').boundingBox();
@@ -50,16 +56,7 @@ export async function verifyGraph(browser, url) {
   await page.waitForTimeout(1100); // Deliberately exceeds both IME/type and dwell thresholds.
   assert.equal(await page.locator('.constellation').getAttribute('data-view'), 'Focus');
   await page.locator('#draft').evaluate(el => el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })));
-  await page.getByRole('button', { name: '查看邻域', exact: true }).click();
-  await page.locator('[data-view="Peek"]').waitFor();
-  assert(await page.locator('#draft').evaluate(el => el === window.stableEditor && el.selectionStart === 3));
-  assert((await page.locator('#draft').evaluate(el => parseFloat(getComputedStyle(el).fontSize))) >= 12);
-  await page.waitForTimeout(320);
-  await page.screenshot({ path: 'test-results/graph-peek.png' });
-  const peekBox = await page.locator('.graph-capsule').boundingBox();
-  assert(Math.abs(peekBox.width / focusedBox.width - .62) < .01);
-  assert(Math.abs(peekBox.height / focusedBox.height - .62) < .01);
-  await page.getByRole('button', { name: '概览', exact: true }).click();
+  await page.getByRole('button', { name: '查看图谱', exact: true }).click();
   await page.locator('[data-view="Overview"]').waitFor();
   await page.waitForTimeout(320);
   await page.screenshot({ path: 'test-results/graph-overview.png' });
@@ -73,18 +70,36 @@ export async function verifyGraph(browser, url) {
   await page.getByRole('button', { name: '关闭子讨论列表', exact: true }).click();
   const nodes = page.locator('.graph-node-header');
   await nodes.nth(1).waitFor();
-  const first = await nodes.first().boundingBox(), second = await nodes.nth(1).boundingBox();
-  const ids = await nodes.evaluateAll(elements => elements.map(e => e.dataset.graphNode));
+  const visibleIndexes = await nodes.evaluateAll(elements => elements.map((el, index) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return hit && el.contains(hit) ? index : -1;
+  }).filter(index => index >= 0));
+  assert(visibleIndexes.length >= 2);
+  const firstNode = nodes.nth(visibleIndexes[0]), secondNode = nodes.nth(visibleIndexes[1]);
+  const first = await firstNode.boundingBox(), second = await secondNode.boundingBox();
+  const ids = [await firstNode.getAttribute('data-graph-node'), await secondNode.getAttribute('data-graph-node')];
   const before = await api('/api/workspace/view');
   // A real short right click exposes a menu and never removes a theme.
   await page.mouse.click(first.x + first.width / 2, first.y + 18, { button: 'right' });
   await page.getByRole('button', { name: '关闭菜单', exact: true }).click();
   assert.equal((await api('/api/workspace/view')).revision, before.revision);
   // Real long hold on blank then rectangle across the two headers.
-  const left = Math.min(first.x, second.x) - 20, top = Math.min(first.y, second.y) - 20;
-  await page.mouse.move(left, top); await page.mouse.down();
+  const firstCenter = { x: first.x + first.width / 2, y: first.y + first.height / 2 };
+  const secondCenter = { x: second.x + second.width / 2, y: second.y + second.height / 2 };
+  const start = await page.evaluate(({ x, y }) => {
+    for (let offset = 16; offset <= 160; offset += 8) {
+      const candidates = [[x - offset, y - offset], [x - offset, y - 8], [x - 8, y - offset]];
+      for (const [clientX, clientY] of candidates) {
+        const element = document.elementFromPoint(clientX, clientY);
+        if (element && !element.closest('.graph-node, .graph-capsule, [data-graph-protected]')) return { x: clientX, y: clientY };
+      }
+    }
+    throw new Error('No blank lasso origin near visible nodes');
+  }, { x: Math.min(firstCenter.x, secondCenter.x), y: Math.min(firstCenter.y, secondCenter.y) });
+  await page.mouse.move(start.x, start.y); await page.mouse.down();
   await page.getByText(/框选主题/).waitFor();
-  await page.mouse.move(Math.max(first.x + first.width, second.x + second.width) + 10, Math.max(first.y + first.height, second.y + second.height) + 4, { steps: 10 });
+  await page.mouse.move(Math.max(firstCenter.x, secondCenter.x) + 12, Math.max(firstCenter.y, secondCenter.y) + 12, { steps: 10 });
   await page.mouse.up();
   await page.locator('.graph-selection').getByRole('button', { name: '关联', exact: true }).click();
   await page.getByRole('dialog', { name: '确认关联范围', exact: true }).waitFor();
@@ -114,10 +129,12 @@ export async function verifyGraph(browser, url) {
   await page.locator('#close-modal').click();
   await page.screenshot({ path: 'test-results/graph-recovered.png' });
   // Browser navigation restores a branch visit rather than repeating its creation.
-  await page.getByRole('button', { name: '继续对话', exact: true }).first().click();
+  await page.getByRole('button', { name: '探索图谱', exact: true }).click();
+  await page.locator('[data-view="Overview"]').waitFor();
+  await page.getByRole('button', { name: '聚焦当前', exact: true }).click();
   await page.waitForTimeout(320);
   const originalTitle = await page.locator('#chat-header h1').innerText();
-  await page.getByRole('button', { name: '概览', exact: true }).click();
+  await page.getByRole('button', { name: '查看图谱', exact: true }).click();
   await page.getByRole('textbox', { name: '图中搜索主题', exact: true }).fill('最小值与非负平方');
   await page.locator('.graph-search-results').getByRole('button', { name: '最小值与非负平方', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('#chat-header h1')?.textContent === '最小值与非负平方');
@@ -127,7 +144,7 @@ export async function verifyGraph(browser, url) {
   await page.waitForFunction(() => document.querySelector('#chat-header h1')?.textContent === '最小值与非负平方');
   for (const viewport of [{ width: 900, height: 600 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
-    if (await page.locator('.constellation').getAttribute('data-view') !== 'Focus') await page.getByRole('button', { name: '继续对话', exact: true }).first().click();
+    if (await page.locator('.constellation').getAttribute('data-view') !== 'Focus') await page.getByRole('button', { name: '聚焦当前', exact: true }).click();
     await page.waitForTimeout(320);
     const send = await page.locator('#send').boundingBox();
     assert(send.x >= 0 && send.x + send.width <= viewport.width && send.y + send.height <= viewport.height);
@@ -144,6 +161,7 @@ export async function verifyGraph(browser, url) {
     if (!r.ok) throw Error(await r.text());
   }, records.map(r => JSON.stringify(r)).join('\n') + '\n');
   const cold = performance.now(); await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: '探索图谱', exact: true }).click();
   await page.locator('.graph-node-header').first().waitFor();
   const coldMs = performance.now() - cold;
   assert(Number(await page.locator('.constellation').getAttribute('data-node-count')) <= 200);

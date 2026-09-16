@@ -27,12 +27,13 @@ export function MessageViewport({ app, select, jump, locate }: { app: WorkspaceC
   const [picked, setPicked] = useState<Selection>();
   const container = useRef<HTMLDivElement>(null), toolbar = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0 }), [hint, setHint] = useState(''), [copied, setCopied] = useState(false);
+  const suppressed = useRef(false);
   useEffect(() => { if (!hint) return; const timer = window.setTimeout(() => setHint(''), 4000); return () => clearTimeout(timer); }, [hint]);
   useEffect(() => {
     let timer = 0;
     const update = () => {
       const selection = window.getSelection(), root = container.current;
-      if (!root || document.querySelector('dialog[open]') || !selection || selection.isCollapsed) { setPicked(undefined); return; }
+      if (suppressed.current || !root || document.querySelector('dialog[open]') || !selection || selection.isCollapsed) { setPicked(undefined); return; }
       try {
         const value = readSelection(selection, root), rect = selection.getRangeAt(0).getBoundingClientRect();
         const viewport = root.closest('.chat')!.getBoundingClientRect();
@@ -42,17 +43,18 @@ export function MessageViewport({ app, select, jump, locate }: { app: WorkspaceC
         setPicked(value);
       } catch { setPicked(undefined); }
     };
-    const schedule = () => { clearTimeout(timer); timer = window.setTimeout(update, 40); };
+    const schedule = () => { suppressed.current = false; clearTimeout(timer); timer = window.setTimeout(update, 40); };
+    const scrolled = () => { clearTimeout(timer); suppressed.current = true; setPicked(undefined); };
     const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') { clearTimeout(timer); setPicked(undefined); window.getSelection()?.removeAllRanges(); } };
     const outside = (e: PointerEvent) => { if (!toolbar.current?.contains(e.target as Node)) setPicked(undefined); };
-    document.addEventListener('selectionchange', schedule); document.addEventListener('pointerup', schedule); document.addEventListener('keydown', escape); document.addEventListener('pointerdown', outside); window.addEventListener('resize', schedule); window.addEventListener('scroll', schedule, true);
-    return () => { clearTimeout(timer); document.removeEventListener('selectionchange', schedule); document.removeEventListener('pointerup', schedule); document.removeEventListener('keydown', escape); document.removeEventListener('pointerdown', outside); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule, true); };
+    const chat = container.current?.closest('.chat');
+    document.addEventListener('selectionchange', schedule); document.addEventListener('pointerup', schedule); document.addEventListener('keydown', escape); document.addEventListener('pointerdown', outside); window.addEventListener('resize', schedule); chat?.addEventListener('scroll', scrolled); window.addEventListener('wheel', scrolled, { capture: true, passive: true });
+    return () => { clearTimeout(timer); document.removeEventListener('selectionchange', schedule); document.removeEventListener('pointerup', schedule); document.removeEventListener('keydown', escape); document.removeEventListener('pointerdown', outside); window.removeEventListener('resize', schedule); chat?.removeEventListener('scroll', scrolled); window.removeEventListener('wheel', scrolled, { capture: true }); };
   }, []);
   useEffect(() => setPicked(undefined), [app.branch?.id, app.page]);
   return <div id="messages" ref={container}>
-    <p className="selection-help">在单条消息中选择文字可展开讨论或复制；公式请切换“选择原文”。</p>
-    <Pager cursor={app.page.cursor ?? -1} next={app.page.nextCursor} change={cursor => void app.navigate(cursor).catch(app.report)} />
     {app.page.items.map(entry => <Message key={entry.id} entry={entry} app={app} jump={jump} locate={locate} select={select} />)}
+    {((app.page.cursor ?? -1) >= 0 || app.page.nextCursor !== null) && <Pager cursor={app.page.cursor ?? -1} next={app.page.nextCursor} change={cursor => void app.navigate(cursor).catch(app.report)} />}
     {picked && <div ref={toolbar} className="selection-toolbar" role="toolbar" aria-label="选区操作" style={position} onPointerDown={e => e.preventDefault()}><Button id="expand-selection" className="primary" onClick={() => { select(picked); setPicked(undefined); }}><Icon name="expand" />展开讨论</Button><IconButton icon={copied ? 'check' : 'copy'} label="复制选中文字" onClick={async () => { try { await navigator.clipboard.writeText(picked.text); setHint('已复制选中文字'); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { setHint('复制失败，请使用系统复制菜单或 Ctrl / Cmd + C。'); } }} /></div>}
     {hint && <p className="selection-feedback" role="status">{hint}</p>}
      {app.partial() && <article className="message assistant" id="stream-output" aria-live="polite"><header>知树 · 正在生成</header><div className="message-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(app.partial()) }} /></article>}

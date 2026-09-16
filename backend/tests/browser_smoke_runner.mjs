@@ -3,8 +3,9 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { verifyUX } from './browser_ux.mjs';
-import { navClick, focusConversation } from './browser_navigation.mjs';
+import { navClick, focusConversation, openModelSettings, conversationAction } from './browser_navigation.mjs';
 import { verifyGraph } from './browser_graph.mjs';
+import { verifyTutorial } from './browser_tutorial.mjs';
 
 const url = process.argv[2];
 const chrome = process.env.CHROME_PATH ?? [
@@ -22,8 +23,13 @@ if (process.env.UX_ONLY) {
   try { await verifyUX(browser, url); } finally { await browser.close(); }
   process.exit(0);
 }
+if (process.env.TUTORIAL_ONLY) {
+  try { await verifyTutorial(browser, url); } finally { await browser.close(); }
+  process.exit(0);
+}
 try {
   const page = await browser.newPage();
+  await page.addInitScript(() => localStorage.setItem('zhishu-tutorial-complete', '1'));
   const errors = [];
   const snapshotRequests = [], sizes = [];
   page.on('request', request => { if (new URL(request.url()).pathname === '/api/workspace') snapshotRequests.push(request.url()); });
@@ -33,7 +39,8 @@ try {
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.locator('#connection').getByText('本地分页存储').waitFor({ state: 'attached' });
 
-  await page.locator('[data-sample]').click();
+  await page.evaluate(async () => { const view = await (await fetch('/api/workspace/view')).json(); await fetch('/api/workspace/actions?response=compact', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'sample', revision: view.revision }) }); });
+  await page.reload({ waitUntil: 'networkidle' });
   const assistant = page.locator('article.message.assistant').first();
   await assistant.locator('[data-source-start]').filter({ hasText: '平方项总是非负' }).scrollIntoViewIfNeeded();
   await assistant.locator('[data-source-start]').filter({ hasText: '平方项总是非负' }).evaluate((element) => {
@@ -53,18 +60,18 @@ try {
   await page.locator('#modal-body summary').filter({ hasText: '继承背景' }).click();
   for (const checkbox of await page.locator('[data-context-id]').all()) await checkbox.uncheck();
   await page.locator('#modal-confirm').click();
-  await page.locator('#chat-header h1').getByText('为什么平方项总是非负？').waitFor();
+  await page.locator('.conversation-heading > strong').getByText('为什么平方项总是非负？').waitFor();
   const child = await current();
-  if (child.selection.text !== '平方项总是非负' || child.entries.some(e => e.inherited)) throw new Error('Selection anchor or cancelled background was lost');
+  if (child.selection.text !== '平方项总是非负' || child.entries.some(e => e.inherited)) throw new Error(`Selection anchor or cancelled background was lost: ${JSON.stringify({ selection: child.selection, inherited: child.entries.filter(e => e.inherited).map(e => e.id) })}`);
   await page.locator('[data-return]').click();
-  await page.locator('#chat-header h1').getByText('二次函数：从配方看见顶点').waitFor();
+  await page.locator('.conversation-heading > strong').getByText('二次函数：从配方看见顶点').waitFor();
   await page.waitForFunction(() => window.getSelection()?.toString() === '平方项总是非负');
 
-  await page.locator('#refresh').click();
+  await page.reload({ waitUntil: 'networkidle' });
   await navClick(page, '#create');
-  await page.locator('#chat-header h1').getByText('新的学习问题').waitFor();
+  await page.locator('.conversation-heading > strong').getByText('新的学习问题').waitFor();
   for (const family of ['openai', 'anthropic', 'gemini']) {
-    await navClick(page, '#settings-button');
+    await openModelSettings(page);
     await page.locator('#ai-provider').selectOption(family);
     await page.locator('#ai-base-url').fill(`${url}/mock`);
     await page.locator('#ai-model').fill('test-model');
@@ -96,7 +103,7 @@ try {
   await page.reload({ waitUntil: 'networkidle' });
   await focusConversation(page);
   if (await page.locator('article.message.assistant[data-entry]').count() !== 3) throw new Error('Restart/reload lost answers');
-  await page.locator('#related-button').click();
+  await conversationAction(page, '#related-button');
   await page.locator('.reference-choice').first().locator('input[type=checkbox]').check();
   await page.locator('.reference-choice').first().locator('details').evaluate(el => el.open = true);
   await page.locator('.reference-choice').first().locator('[data-end]').fill('4');
@@ -105,16 +112,16 @@ try {
   const reference = (await current()).entries.find(e => e.kind === 'reference');
   if (reference.text.length !== 4) throw new Error('Partial reference was not preserved');
   await page.locator('article.reference [data-jump]').click();
-  await page.locator('#chat-header h1').getByText('二次函数：从配方看见顶点').waitFor();
+  await page.locator('.conversation-heading > strong').getByText('二次函数：从配方看见顶点').waitFor();
   await page.waitForFunction(text => window.getSelection()?.toString() === text, reference.text);
   await navClick(page, '#create');
-  await page.locator('#chat-header h1').getByText('新的学习问题').waitFor();
+  await page.locator('.conversation-heading > strong').getByText('新的学习问题').waitFor();
   const backgroundRun = (await current()).id;
   await page.locator('#draft').fill('background generation');
   await page.locator('#send').click();
   await page.locator('#stream-output').getByText('增量😀', { exact: false }).waitFor();
   await navClick(page, `[data-switch="${child.parent.branchId}"]`);
-  await page.locator('#chat-header h1').getByText('二次函数：从配方看见顶点').waitFor();
+  await page.locator('.conversation-heading > strong').getByText('二次函数：从配方看见顶点').waitFor();
   await page.locator('#draft').fill('draft on another branch');
   await page.waitForFunction(async id => !(await (await fetch(`/api/branches/${id}`)).json()).awaiting, backgroundRun);
   if (await page.locator('#draft').inputValue() !== 'draft on another branch') throw new Error('Background completion changed active draft');
@@ -127,15 +134,16 @@ try {
   const fixture = join('test-results', 'large.ndjson');
   await writeFile(fixture, records.map(r => JSON.stringify(r)).join('\n') + '\n');
   await navClick(page, '#settings-button');
+  await page.getByRole('button', { name: /数据与备份/ }).click();
   await page.locator('#import-ndjson').setInputFiles(fixture);
   await page.locator('#transfer-progress').getByText('已导入 10000 条消息。').waitFor();
   await page.locator('#close-modal').click();
-  await page.locator('#chat-header h1').getByText('Large 0', { exact: true }).waitFor();
+  await page.locator('.conversation-heading > strong').getByText('Large 0', { exact: true }).waitFor();
   if (await page.locator('#messages [data-entry]').count() > 40 || await page.locator('#tree [data-switch]').count() > 40) throw new Error('DOM window is not bounded');
   await page.locator('#messages').getByRole('button', { name: '下一页' }).click();
   await page.locator('#messages [data-entry="large-0-40"]').waitFor();
   if (await page.locator('#messages [data-entry]').count() !== 40) throw new Error('Message paging failed');
-  await page.locator('#related-button').click();
+  await conversationAction(page, '#related-button');
   await page.getByLabel('搜索来源主题').fill('Large 99');
   await page.locator('#source-select option[value="large-99"]').waitFor({ state: 'attached' });
   await page.locator('#source-select').selectOption('large-99');
@@ -149,7 +157,7 @@ try {
   await page.locator('.reference-choice[data-entry="large-99-0"]').waitFor();
   if (!await page.locator('.reference-choice').first().locator('input[type=checkbox]').isChecked()) throw new Error('Cross-page reference selection lost');
   await page.keyboard.press('Escape');
-  if (!await page.locator('#related-button').evaluate(e => document.activeElement === e)) throw new Error('Dialog focus was not restored');
+  if (!await page.locator('#conversation-actions-button').evaluate(e => document.activeElement === e)) throw new Error('Dialog focus was not restored to the conversation menu');
   // Dirty drafts survive stream completion and failed flush prevents navigation.
   await page.locator('#draft').fill('preserved draft');
   await page.route('**/api/workspace/actions?response=compact', route => {
@@ -162,20 +170,21 @@ try {
   await page.unroute('**/api/workspace/actions?response=compact');
   for (let b = 1; b <= 10; b++) {
     await navClick(page, `[data-switch="large-${b}"]`);
-    await page.locator('#chat-header h1').getByText(`Large ${b}`, { exact: true }).waitFor();
+    await page.locator('.conversation-heading > strong').getByText(`Large ${b}`, { exact: true }).waitFor();
     const limits = await page.locator('[data-cache-pages]').evaluate(e => ({ pages: Number(e.dataset.cachePages), entries: Number(e.dataset.cacheEntries) }));
     if (limits.pages > 8 || limits.entries > 320) throw new Error(`Cache unbounded: ${JSON.stringify(limits)}`);
   }
   await navClick(page, '[data-switch="large-0"]');
   await page.locator('#draft').getAttribute('id');
   await page.waitForFunction(() => document.querySelector('#draft')?.value === 'preserved draft');
-  await page.locator('#manage-button').click();
+  await conversationAction(page, '#manage-button');
   await page.locator('[data-delete-branch]').click();
   await page.getByRole('button', { name: '确认移除主题', exact: true }).click();
   await page.locator('.graph-recovery').getByRole('button', { name: '恢复', exact: true }).click();
   await navClick(page, '[data-switch="large-0"]');
-  await page.locator('#chat-header h1').getByText('Large 0', { exact: true }).waitFor();
+  await page.locator('.conversation-heading > strong').getByText('Large 0', { exact: true }).waitFor();
   await navClick(page, '#settings-button');
+  await page.getByRole('button', { name: /数据与备份/ }).click();
   const downloading = page.waitForEvent('download');
   await page.getByText('流式导出 NDJSON').click();
   const download = await downloading;

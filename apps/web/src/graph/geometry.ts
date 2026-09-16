@@ -12,7 +12,7 @@ export function detail(width: number, height: number, previous: Detail): Detail 
 export function allocate(nodes: GraphNode[], camera: Camera, width: number, height: number,
   previous: Map<string, Detail>, priority: string[]) {
   const boxes: Box[] = [], visible: { node: GraphNode; level: Detail }[] = [], crowded: GraphNode[] = [];
-  let previews = 0;
+  let previews = 0, labels = 0;
   const rank = (id: string) => { const i = priority.indexOf(id); return i < 0 ? priority.length : i; };
   for (const node of [...nodes].sort((a, b) => rank(a.id) - rank(b.id))) {
     const p = screen(node, camera);
@@ -20,10 +20,13 @@ export function allocate(nodes: GraphNode[], camera: Camera, width: number, heig
     // Keep every visible node identifiable while zoomed out; zoom changes preview detail, not identity.
     let level = Math.max(1, detail(360 * camera.scale, 240 * camera.scale, previous.get(node.id) ?? 0)) as Detail;
     if (level === 2 && (previews >= 12 || !node.previews.length)) level = 1;
-    const box = { id: node.id, left: p.x - 110, right: p.x + 150, top: p.y - 24, bottom: p.y + (level === 2 ? 210 : 24) };
+    if (labels >= 59) { crowded.push(node); continue; }
+    // Node DOM renders at 1.5x; collision and density budgets must use the same screen footprint.
+    const box = { id: node.id, left: p.x - 165, right: p.x + 225, top: p.y - 36, bottom: p.y + (level === 2 ? 315 : 36) };
     if (boxes.some(b => intersects(b, box))) { crowded.push(node); continue; }
     boxes.push(box); previous.set(node.id, level);
     visible.push({ node, level });
+    labels++;
     if (level === 2) previews++;
   }
   return { visible, crowded };
