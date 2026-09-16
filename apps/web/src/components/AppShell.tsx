@@ -27,7 +27,7 @@ export function AppShell() {
   const [settingsState, setSettingsState] = useState({ dirty: false, busy: false }), [config, setConfig] = useState<AiConfig>();
   const [dataBusy, setDataBusy] = useState(false);
   const [referenceSource, setReferenceSource] = useState<string>();
-  const [authState, setAuthState] = useState<{ isLoggedIn: boolean; email?: string | null }>({ isLoggedIn: false });
+  const [authState, setAuthState] = useState<{ isLoggedIn: boolean; email?: string | null; name?: string | null }>({ isLoggedIn: false });
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const createGuard = useRef(false);
   const configChanged = useRef(false);
@@ -37,7 +37,7 @@ export function AppShell() {
   const providerState = useCallback((dirty: boolean, busy: boolean) => setSettingsState({ dirty, busy }), []);
   const close = () => { setModal(''); setSelection(undefined); setSettingsState({ dirty: false, busy: false }); };
   // Refresh auth state whenever the modal closes (covers login/logout).
-  const refreshAuth = useCallback(() => { void api.authMe().then(s => setAuthState({ isLoggedIn: s.isLoggedIn, email: s.email ?? null })).catch(() => {}); }, []);
+  const refreshAuth = useCallback(() => { void api.authMe().then(s => setAuthState({ isLoggedIn: s.isLoggedIn, email: s.email ?? null, name: s.name ?? null })).catch(() => {}); }, []);
   useEffect(() => { refreshAuth(); }, [refreshAuth]);
   useEffect(() => {
     if (!nav) return;
@@ -70,7 +70,7 @@ export function AppShell() {
   return <div className={`graph-workspace ${nav ? 'nav-open' : ''}`} data-cache-pages={app.cache.size} data-cache-entries={app.cache.entryCount}>
     <a className="skip" href="#draft">跳到输入框</a><TopicNavigator app={app} navigated={navigated} settings={() => { setNav(false); setModal('settings'); }} />
     {nav && <button className="nav-backdrop" aria-label="收起主题导航" onClick={() => { setNav(false); document.getElementById('nav-toggle')?.focus(); }} />}
-     <main className="workspace"><header className="topbar"><button id="nav-toggle" aria-expanded={nav} onClick={() => setNav(!nav)}>菜单</button><button className="top-title" title={config?.model ?? '设置模型连接'} onClick={() => setModal('settings')}>{config?.configured ? config.model : '设置模型'}</button>{authState.isLoggedIn && authState.email ? <><button id="user-button" className="top-manage" title="账户设置" onClick={() => setModal('auth')}>🔑 {authState.email}</button><button className="top-manage" title="登出" onClick={() => setLogoutConfirm(true)}>登出</button></> : <button id="login-button" className="primary" title="登录或注册" onClick={() => setModal('auth')}>🔓 登录</button>}<div className="top-actions"><button id="related-button" disabled={!branch} onClick={() => setModal('references')}>引用</button><button id="context-button" disabled={!branch} onClick={() => setModal('context')}>上下文</button><button id="manage-button" className="top-manage" disabled={!branch} onClick={() => setModal('topic')}>管理</button></div></header>
+     <main className="workspace"><header className="topbar"><button id="nav-toggle" aria-expanded={nav} onClick={() => setNav(!nav)}>菜单</button><button className="top-title" title={config?.model ?? '设置模型连接'} onClick={() => setModal('settings')}>{config?.configured ? config.model : '设置模型'}</button>{authState.isLoggedIn && authState.name ? <><button id="user-button" className="top-manage" title="账户设置" onClick={() => setModal('auth')}>🔑 {authState.name}</button><button className="top-manage" title="登出" onClick={() => setLogoutConfirm(true)}>登出</button></> : <button id="login-button" className="primary" title="登录或注册" onClick={() => setModal('auth')}>🔓 登录</button>}<div className="top-actions"><button id="related-button" disabled={!branch} onClick={() => setModal('references')}>引用</button><button id="context-button" disabled={!branch} onClick={() => setModal('context')}>上下文</button><button id="manage-button" className="top-manage" disabled={!branch} onClick={() => setModal('topic')}>管理</button></div></header>
        <Constellation app={app} restoreReading={setJump} modal={Boolean(modal || selection)} references={source => { setReferenceSource(source); setModal('references'); }} newTopic={() => void newTopic()}>
        <section className="chat" aria-label="当前讨论"><div id="chat-header"><h1>{branch?.title ?? '让好奇有迹可循'}</h1>{branch?.selection && <blockquote>{branch.selection.text}</blockquote>}{branch?.parent && <button data-return onClick={() => void locate({ branchId: branch.parent!.branchId, entryId: branch.parent!.entryId, start: branch.selection?.start ?? 0, end: branch.selection?.end ?? 0 }).catch(app.report)}>返回原讨论</button>}{branch?.sourceOrigin && !branch.parent && <p>原父主题已移除；出处快照保留。</p>}</div>
           {branch ? <MessageViewport app={app} select={setSelection} jump={jump} locate={j => void locate(j).catch(app.report)} /> : <div className="onboarding"><p className="onboarding-kicker">把一个问题想清楚</p><h2>从一个问题开始</h2><p>输入问题，得到回答；选中其中一段，就能把思路继续展开。</p><button className="primary" onClick={() => { if (config?.configured) void newTopic(); else setModal('settings'); }}>{config?.configured ? `开始新问题 · ${config.model}` : '先连接模型'}</button><button data-sample onClick={() => void app.action({ type: 'sample' }).catch(app.report)}>先体验人工学习示例</button></div>}

@@ -34,7 +34,7 @@ export const api = {
   rerank: (query: string, candidates: { id: string; title: string; summary: string }[]) => request<{ ids: string[] }>('/api/ai/rerank', { method: 'POST', body: JSON.stringify({ query, candidates }) }),
   import: (body: unknown, revision: number) => request<Snapshot>('/api/import', { method: 'POST', body: JSON.stringify({ ...(body as object), revision }) }),
   // ─── email auth ───
-  authMe: () => request<{ isLoggedIn: boolean; userId?: string; email?: string | null }>('/api/auth/me'),
+  authMe: () => request<{ isLoggedIn: boolean; userId?: string; email?: string | null; name?: string | null }>('/api/auth/me'),
   emailStart: (email: string) => request<{ ok: true }>('/api/auth/email/start', { method: 'POST', body: JSON.stringify({ email }) }),
   emailRegister: (body: { email: string; code: string; password: string }) => request<{ ok: true; userId: string }>('/api/auth/email/register', { method: 'POST', body: JSON.stringify(body) }),
   emailLogin: (body: { email: string; password: string }) => request<{ ok: true; userId: string }>('/api/auth/email/login', { method: 'POST', body: JSON.stringify(body) }),
