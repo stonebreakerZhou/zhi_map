@@ -217,11 +217,12 @@ def main():
                 assert cookie["secure"] and cookie["httpOnly"] and cookie["expires"] > time.time()
                 if cycle == 0:
                     page.screenshot(path=str(directory / "homepage.png"))
-                    page.locator(".graph-tools").get_by_role("button", name="新的学习问题", exact=True).click()
-                    page.locator("#chat-header h1").filter(has_text="新的学习问题").wait_for()
+                    page.locator("#create").click()
+                    page.locator(".conversation-heading > strong").filter(has_text="新的学习问题").wait_for()
                     # Use the visible settings form, not a synthetic API save.
-                    page.get_by_role("button", name="菜单", exact=True).click()
-                    page.get_by_role("button", name="设置与数据", exact=True).click()
+                    page.locator("#conversation-actions-button").click()
+                    page.locator("#settings-button").click()
+                    page.get_by_role("button", name=re.compile("模型服务")).click()
                     # Persistence-only: a public IP literal avoids live provider DNS.
                     # No connection test or generation request is sent to this address.
                     page.locator("#ai-base-url").fill("https://93.184.216.34/v1")
@@ -250,8 +251,7 @@ def main():
                     page.reload(wait_until="networkidle")
                 else:
                     assert cookie["value"] == previous_cookie, "Session changed across app restart"
-                    page.locator(".graph-tools").get_by_role("button", name="继续对话", exact=True).click()
-                    page.locator("#chat-header h1").filter(has_text="新的学习问题").wait_for()
+                    page.locator(".conversation-heading > strong").filter(has_text="新的学习问题").wait_for()
                     assert page.locator("#draft").input_value() == "打包持久化 😀 draft"
                 workspace = page.evaluate("fetch('/api/workspace').then(r=>r.json())")
                 config = page.evaluate("fetch('/api/ai/config').then(r=>r.json())")
