@@ -37,7 +37,7 @@ try {
   const current = () => page.evaluate(async () => { const view = await (await fetch('/api/workspace/view')).json(); const branch = await (await fetch(`/api/branches/${view.active}`)).json(); const entries = await (await fetch(`/api/branches/${view.active}/entries?limit=40`)).json(); return { ...branch, entries: entries.items }; });
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.locator('#connection').getByText('本地分页存储').waitFor({ state: 'attached' });
+  await page.locator('#connection').getByText('本地保存').waitFor({ state: 'attached' });
 
   await page.evaluate(async () => { const view = await (await fetch('/api/workspace/view')).json(); await fetch('/api/workspace/actions?response=compact', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'sample', revision: view.revision }) }); });
   await page.reload({ waitUntil: 'networkidle' });

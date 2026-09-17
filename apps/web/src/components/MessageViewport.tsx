@@ -15,10 +15,11 @@ function Message({ entry, app, jump, locate, select }: { entry: Entry; app: Work
   return <article className={entry.kind === 'reference' ? 'reference' : `message ${entry.role}`} data-entry={entry.id} data-kind={entry.kind}>
     <header>{entry.kind === 'reference' ? '引用快照' : entry.role === 'user' ? '你' : '知树'}{entry.inherited && ' · 继承背景'}{entry.simulated && ' · 人工示例'}</header>
     <div ref={ref} className="message-text" data-source={entry.text} dangerouslySetInnerHTML={{ __html: raw ? `<span data-source-start="0">${entry.text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)}</span>` : renderMarkdown(entry.text) }} />
-    <div className="toolbar"><button aria-pressed={raw} onClick={() => setRaw(!raw)}>{raw ? '返回排版阅读' : '选择原文'}</button>
-      {entry.kind === 'message' && <button data-fork disabled={!entry.text.trim()} onClick={() => select({ entryId: entry.id, start: 0, end: entry.text.length, text: entry.text })}>从这里分叉</button>}
-      {(entry.kind === 'reference' || entry.inherited) && <button data-jump onClick={() => locate({ branchId: entry.source.branchId, entryId: entry.source.messageId, start: entry.range?.start ?? 0, end: entry.range?.end ?? entry.text.length })}>返回原文</button>}
-      {entry.kind === 'reference' && <button className="danger-block" onClick={() => void app.action({ type: 'removeReference', branchId: app.branch!.id, entryId: entry.id }).catch(app.report)}>移除引用</button>}
+    <div className="message-actions" role="group" aria-label="消息操作">
+      <IconButton icon="source" label={raw ? '返回排版阅读' : '选择原文'} aria-pressed={raw} onClick={() => setRaw(!raw)} />
+      {entry.kind === 'message' && <IconButton data-fork icon="branch" label="展开讨论" disabled={!entry.text.trim()} onClick={() => select({ entryId: entry.id, start: 0, end: entry.text.length, text: entry.text })} />}
+      {(entry.kind === 'reference' || entry.inherited) && <IconButton data-jump icon="jump" label="返回原文" onClick={() => locate({ branchId: entry.source.branchId, entryId: entry.source.messageId, start: entry.range?.start ?? 0, end: entry.range?.end ?? entry.text.length })} />}
+      {entry.kind === 'reference' && <IconButton className="danger" icon="trash" label="移除引用" onClick={() => void app.action({ type: 'removeReference', branchId: app.branch!.id, entryId: entry.id }).catch(app.report)} />}
     </div>
   </article>;
 }

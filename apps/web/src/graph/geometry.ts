@@ -21,8 +21,8 @@ export function allocate(nodes: GraphNode[], camera: Camera, width: number, heig
     let level = Math.max(1, detail(360 * camera.scale, 240 * camera.scale, previous.get(node.id) ?? 0)) as Detail;
     if (level === 2 && (previews >= 12 || !node.previews.length)) level = 1;
     if (labels >= 59) { crowded.push(node); continue; }
-    // Node DOM renders at 1.5x; collision and density budgets must use the same screen footprint.
-    const box = { id: node.id, left: p.x - 165, right: p.x + 225, top: p.y - 36, bottom: p.y + (level === 2 ? 315 : 36) };
+    // Screen footprint of one node: 56px header plus its connector, count and preview.
+    const box = { id: node.id, left: p.x - 125, right: p.x + 190, top: p.y - 30, bottom: p.y + (level === 2 ? 230 : 30) };
     if (boxes.some(b => intersects(b, box))) { crowded.push(node); continue; }
     boxes.push(box); previous.set(node.id, level);
     visible.push({ node, level });

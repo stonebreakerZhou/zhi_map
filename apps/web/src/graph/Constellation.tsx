@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import type { WorkspaceController } from '../controller.js';
 import { Dialog, ConfirmDialog } from '../components/Dialog.js';
+import { Icon } from '../components/UI.js';
 import { graphApi, type GraphEdge, type GraphNode, type Point, type Projection } from './api.js';
 import { advance, begin, intersects, rectangle, screen, world, zoomAt, type Box, type Camera, type Gesture } from './gestures.js';
 import { allocate, type Detail } from './geometry.js';
@@ -11,6 +12,58 @@ import './constellation.css';
 type View = 'Focus' | 'Peek' | 'Overview';
 type Relation = { source: string; targets: string[] };
 type Visit = { branchId: string; entryId?: string; scroll: number; camera: Camera; view: View; selection?: Jump };
+type RenderEdge = GraphEdge & { count: number; offset: number };
+
+/** Draw order: the tree first, then provenance, then loose associations. */
+const EDGE_ORDER: Record<GraphEdge['type'], number> = { parent: 0, reference: 1, contact: 2 };
+/** Node card half-extent in screen px, used to stop an edge short of the card it points at. */
+const NODE_HALF = { x: 132, y: 34 };
+
+/**
+ * Exit point of the segment `from -> to` out of the box centred on `from`.
+ * Clamped to the midpoint so two very close nodes never cross over each other.
+ */
+export function trimToBox(from: Point, to: Point, half: { x: number; y: number }): Point {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const tx = dx === 0 ? Infinity : half.x / Math.abs(dx);
+  const ty = dy === 0 ? Infinity : half.y / Math.abs(dy);
+  const t = Math.max(0, Math.min(tx, ty, 0.5));
+  return { x: from.x + dx * t, y: from.y + dy * t };
+}
+
+/** Cubic path that bulges along the dominant axis, offset sideways for parallel edges. */
+export function edgePath(a: Point, b: Point, offset: number): string {
+  const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
+  const nx = (-dy / length) * offset, ny = (dx / length) * offset;
+  const ax = a.x + nx, ay = a.y + ny, bx = b.x + nx, by = b.y + ny;
+  if (Math.abs(dx) >= Math.abs(dy)) { const c = (bx - ax) / 2; return `M ${ax} ${ay} C ${ax + c} ${ay}, ${bx - c} ${by}, ${bx} ${by}`; }
+  const c = (by - ay) / 2; return `M ${ax} ${ay} C ${ax} ${ay + c}, ${bx} ${by - c}, ${bx} ${by}`;
+}
+
+/**
+ * Merge duplicate relations, drop malformed ones, and give parallel edges a lateral offset.
+ * One relation per (type, source, target) keeps repeated references from stacking invisibly.
+ */
+export function planEdges(edges: GraphEdge[], rendered: Set<string>, scale: number): RenderEdge[] {
+  const merged = new Map<string, RenderEdge>();
+  for (const edge of edges) {
+    if (!edge.source || !edge.target || edge.source === edge.target) continue;
+    if (!rendered.has(edge.source) || !rendered.has(edge.target)) continue;
+    const key = `${edge.type}:${edge.source}:${edge.target}`;
+    const found = merged.get(key);
+    if (found) found.count += 1;
+    else merged.set(key, { ...edge, count: 1, offset: 0 });
+  }
+  const used = new Map<string, number>();
+  return [...merged.values()]
+    .sort((a, b) => EDGE_ORDER[a.type] - EDGE_ORDER[b.type] || a.id.localeCompare(b.id))
+    .map(edge => {
+      const pair = [edge.source, edge.target].sort().join('|');
+      const index = used.get(pair) ?? 0;
+      used.set(pair, index + 1);
+      return { ...edge, offset: index * (14 / Math.max(scale, .25)) };
+    });
+}
 
 /** Native history projection; the reading children and editor remain mounted across every camera state. */
 export function Constellation({ app, children, references, modal, newTopic, restoreReading }: {
@@ -34,6 +87,11 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const [hoveredNode, setHoveredNode] = useState<string>();
   const [cursorHint, setCursorHint] = useState<{ x: number; y: number; title: string }>();
   const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsTimer = useRef(0);
+  // Leaving the toolbar only schedules a close: the pointer may be crossing the gap into the panel.
+  const keepTools = () => clearTimeout(toolsTimer.current);
+  const closeToolsSoon = () => { clearTimeout(toolsTimer.current); toolsTimer.current = window.setTimeout(() => setToolsOpen(false), 180); };
+  useEffect(() => () => clearTimeout(toolsTimer.current), []);
   const [expanded, setExpanded] = useState<string>();
   const [childCursor, setChildCursor] = useState(-1);
   const lod = useRef(new Map<string, Detail>());
@@ -382,32 +440,41 @@ export function Constellation({ app, children, references, modal, newTopic, rest
   const positions = new Map(drawn.map(n => [n.id, screen(n, camera)]));
   const allocation = allocate(drawn.filter(n => n.id !== app.branch?.id), camera, size.width, size.height, lod.current,
     [...selected, ...(edge ? [edge.source, edge.target] : []), ...(projection?.path ?? [])]);
-  const renderedIds = new Set([app.branch?.id, ...allocation.visible.map(n => n.node.id)]);
-  const renderedEdges = (projection?.edges ?? []).filter(e => renderedIds.has(e.source) && renderedIds.has(e.target));
+  const renderedIds = new Set<string>([...(app.branch ? [app.branch.id] : []), ...allocation.visible.map(n => n.node.id)]);
+  const nodeById = new Map(drawn.map(n => [n.id, n]));
+  const halfWorld = { x: NODE_HALF.x / camera.scale, y: NODE_HALF.y / camera.scale };
+  const renderEdges = planEdges(projection?.edges ?? [], renderedIds, camera.scale).flatMap(edge => {
+    const a = nodeById.get(edge.source), b = nodeById.get(edge.target);
+    if (!a || !b) return [];
+    const d = edgePath(trimToBox(a, b, halfWorld), trimToBox(b, a, halfWorld), edge.offset);
+    return [{ edge, d }];
+  });
+  const arrowSize = 9 / Math.max(camera.scale, .25);
   const changeZoom = (factor: number, p = { x: size.width / 2, y: size.height / 2 }) => { setView('Overview'); animate(zoomAt(cameraRef.current, p, factor)); };
   const selectionBox = gesture?.phase === 'lasso' ? rectangle(gesture.origin, gesture.point) : undefined;
 
   return <>
-     <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerLeave={(e) => { const related = e.relatedTarget; if (related instanceof Node && e.currentTarget.contains(related)) return; setToolsOpen(false); }}>
+     <div className="graph-tools" data-graph-protected role="toolbar" aria-label="图谱视图工具" onPointerEnter={keepTools} onPointerLeave={closeToolsSoon}>
         <button className="graph-primary" disabled={!app.branch} onClick={() => changeView(view === 'Focus' ? 'Overview' : 'Focus')}>{view === 'Focus' ? '查看图谱' : '聚焦当前'}</button>
         <div className="zoom-controls" aria-label="图谱缩放"><button aria-label="缩小图" onClick={() => changeZoom(1 / 1.2)}>−</button><span>{Math.round(camera.scale * 100)}%</span><button aria-label="放大图" onClick={() => changeZoom(1.2)}>＋</button></div>
-        <button aria-expanded={toolsOpen} aria-controls="graph-options" onClick={() => setToolsOpen(open => !open)}>工具</button>
-        <button id="refresh" onClick={() => void app.flush().then(() => { app.cache.clear(); return app.load(); }).catch(app.report)}>刷新</button>
+        <button aria-expanded={toolsOpen} aria-controls="graph-options" onClick={() => setToolsOpen(open => !open)}>更多</button>
         {toolsOpen && <div id="graph-options" className="graph-options">
-         <button onClick={newTopic}>新的学习问题</button><button disabled={!active} onClick={() => changeView('Focus')}>聚焦当前</button>
-        <button onClick={() => history.back()}>返回上次位置</button><button onClick={() => history.forward()}>前进到下次位置</button>
-        <details><summary>主树路径</summary>{[...(projection?.path ?? [])].reverse().map(id => <button key={id} onClick={() => open(id)}>{nodeName(id)}</button>)}</details>
-        <details><summary>主题列表（当前窗口）</summary>{drawn.slice(0, 40).map(n => <button key={n.id} onClick={() => open(n.id)}>{n.kind === 'root' ? '根主题' : '子讨论'} · {n.title} · 子讨论 {n.childrenCount}</button>)}</details>
-        <button disabled={!app.branch?.parent} onClick={() => { const parent = app.branch?.parent; if (parent) open(parent.branchId); }}>上级主题</button>
-        <button disabled={!app.branch} onClick={() => { if (app.branch) void graphApi.root(app.branch.id).then(r => { const id = r.rootId ?? r.continuationId; if (id) open(id); }).catch(app.report); }}>所属根 / 继续上溯</button>
-        <label><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} />移出自动展开</label>
-        <label><input type="checkbox" checked={locked} onChange={e => setLocked(e.target.checked)} />锁定专注</label>
-        <label><input type="checkbox" checked={titles} onChange={e => setTitles(e.target.checked)} />仅标题</label>
-        <label><input type="checkbox" checked={organize} onChange={e => setOrganize(e.target.checked)} />整理解锁 · 拖动标题保存位置</label>
-        <label><input type="checkbox" checked={selectMode} onChange={e => setSelectMode(e.target.checked)} />选择模式</label>
-        <label>专注占比<input type="range" min=".88" max=".92" step=".01" value={ratio} onChange={e => setRatio(Number(e.target.value))} /></label>
-        <label>邻域比例<input type="range" min=".45" max=".75" step=".01" value={peek} onChange={e => setPeek(Number(e.target.value))} /></label>
-        <p>空白立即拖动平移；长按 350ms 框选。标题长按连线，右键划过主题后松开移除；可恢复。正文保持原生选区。</p>
+          <section className="graph-options-group"><h3>定位</h3>
+            <button onClick={() => { newTopic(); setToolsOpen(false); }}>新的学习问题</button>
+            <button disabled={!app.branch?.parent} onClick={() => { const parent = app.branch?.parent; if (parent) open(parent.branchId); }}>上级主题</button>
+            <button disabled={!app.branch} onClick={() => { if (app.branch) void graphApi.root(app.branch.id).then(r => { const id = r.rootId ?? r.continuationId; if (id) open(id); }).catch(app.report); }}>所属根</button>
+          </section>
+          <section className="graph-options-group"><h3>路径与主题</h3>
+            <details><summary>主树路径</summary>{[...(projection?.path ?? [])].reverse().map(id => <button key={id} onClick={() => open(id)}>{nodeName(id)}</button>)}</details>
+            <details><summary>当前窗口主题</summary>{drawn.slice(0, 40).map(n => <button key={n.id} onClick={() => open(n.id)}>{n.title}</button>)}</details>
+          </section>
+          <section className="graph-options-group"><h3>视图</h3>
+            <label><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} />移出时自动展开邻域</label>
+            <label><input type="checkbox" checked={locked} onChange={e => setLocked(e.target.checked)} />锁定专注</label>
+            <label><input type="checkbox" checked={titles} onChange={e => setTitles(e.target.checked)} />仅显示标题</label>
+            <label><input type="checkbox" checked={organize} onChange={e => setOrganize(e.target.checked)} />整理模式（拖动标题保存位置）</label>
+            <label><input type="checkbox" checked={selectMode} onChange={e => setSelectMode(e.target.checked)} />选择模式</label>
+          </section>
        </div>}
      </div>
     <div ref={host} className={`constellation view-${view.toLowerCase()}`} data-view={view} data-node-count={drawn.length} data-edge-count={projection?.edges.length ?? 0} data-gesture-phase={gesture?.phase ?? 'idle'} data-gesture-boxes={gesture?.boxes.length ?? 0} data-selection-count={selected.length}
@@ -419,8 +486,15 @@ export function Constellation({ app, children, references, modal, newTopic, rest
       onContextMenu={e => { if (!protectedElement(e.target)) { e.preventDefault(); if (!gestureRef.current && !suppress.current) setMenu({ point: graphPoint(e), id: e.target instanceof Element ? e.target.closest<HTMLElement>('[data-graph-node]')?.dataset.graphNode : undefined }); } }}
       onWheel={e => { if (!protectedElement(e.target) && !e.ctrlKey && !e.metaKey && !gestureRef.current) { e.preventDefault(); changeZoom(Math.exp(-e.deltaY * .0015), graphPoint(e)); } }}>
       <svg className="graph-edges" aria-label="主题关系" width="100%" height="100%">
-        <defs><marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" /></marker></defs>
-        <g className="graph-world-edges">{renderedEdges.map(e => { const a = drawn.find(n => n.id === e.source), b = drawn.find(n => n.id === e.target); const d = a && b ? `M ${a.x} ${a.y} C ${(a.x+b.x)/2} ${a.y}, ${(a.x+b.x)/2} ${b.y}, ${b.x} ${b.y}` : ''; return a && b && <g key={e.id} data-graph-protected className={`graph-edge edge-${e.type}`} onPointerDown={event => event.stopPropagation()} onClick={() => setEdge(e)}><title>{e.type} · {nodeName(e.source)} → {nodeName(e.target)}</title><path d={d} markerEnd={e.type !== 'contact' ? 'url(#graph-arrow)' : undefined} /><path className="edge-hit" d={d} /></g>; })}</g>
+        <defs>
+          {/* userSpaceOnUse + a size divided by the live scale keeps every arrowhead 9px on screen. */}
+          {(['parent', 'reference'] as const).map(type => <marker key={type} id={`graph-arrow-${type}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth={arrowSize} markerHeight={arrowSize} markerUnits="userSpaceOnUse" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>)}
+        </defs>
+        <g className="graph-world-edges">{renderEdges.map(({ edge, d }) => <g key={`${edge.type}:${edge.source}:${edge.target}`} data-graph-protected data-edge-id={edge.id} data-edge-type={edge.type} className={`graph-edge edge-${edge.type}`} onPointerDown={event => event.stopPropagation()} onClick={() => setEdge(edge)}>
+          <title>{edge.type === 'parent' ? '子讨论' : edge.type === 'reference' ? '引用' : '联系'} · {nodeName(edge.source)} → {nodeName(edge.target)}{edge.count > 1 ? ` · ${edge.count} 条` : ''}</title>
+          <path d={d} markerEnd={edge.type === 'contact' ? undefined : `url(#graph-arrow-${edge.type})`} />
+          <path className="edge-hit" d={d} />
+        </g>)}</g>
       </svg>
       <div className="graph-nodes" role="group" aria-label="星空主题">
         {allocation.visible.map(({ node: n, level }, index) => {
@@ -439,10 +513,12 @@ export function Constellation({ app, children, references, modal, newTopic, rest
               const at = buttons.indexOf(e.currentTarget), delta = ['ArrowLeft', 'ArrowUp'].includes(e.key) ? -1 : 1;
               buttons[(at + delta + buttons.length) % buttons.length]?.focus();
             }}>
-              <span className={`graph-dot ${n.kind}`} />{label && <span className="graph-label">{n.title}{n.id === app.branch?.id ? ' · 当前' : n.kind === 'root' ? ' · 根' : ''}</span>}
+              <span className={`graph-dot ${n.kind}`} />{label && <span className="graph-label">{n.title}</span>}
             </button>
-             {label && <button className="graph-connector" data-graph-node={n.id} data-connector aria-label={`关联 ${n.title}`} onClick={() => { if (!suppress.current) { setSelected([n.id]); setSelectMode(true); } }}>○</button>}
-            {label && n.childrenCount > 0 && <button data-graph-protected aria-label={`${collapsed.includes(n.id) ? '展开' : '收起'}子讨论 ${n.title}`} onClick={() => { setCollapsed(s => s.includes(n.id) ? s.filter(id => id !== n.id) : [...s, n.id]); setExpanded(n.id); setChildCursor(-1); }}>{collapsed.includes(n.id) ? '+' : '−'} {n.childrenCount}</button>}
+             {label && <div className="graph-node-actions">
+              <button className="graph-connector" data-graph-node={n.id} data-connector aria-label={`关联 ${n.title}`} title="关联到其他主题" onClick={() => { if (!suppress.current) { setSelected([n.id]); setSelectMode(true); } }}><Icon name="link" /></button>
+              {n.childrenCount > 0 && <button className="graph-children" data-graph-protected aria-expanded={!collapsed.includes(n.id)} aria-label={`${collapsed.includes(n.id) ? '展开' : '收起'}子讨论 ${n.title}`} title={collapsed.includes(n.id) ? `展开 ${n.childrenCount} 个子讨论` : `收起 ${n.childrenCount} 个子讨论`} onClick={() => { setCollapsed(s => s.includes(n.id) ? s.filter(id => id !== n.id) : [...s, n.id]); setExpanded(n.id); setChildCursor(-1); }}><Icon name="chevron" /><span>{n.childrenCount}</span></button>}
+            </div>}
               {nodePreview && <div className="graph-preview" data-graph-protected><small>原文摘录</small>{n.previews.map(e => <p key={e.entryId}>{e.text}</p>)}</div>}
               {hoveredNode === n.id && view === 'Overview' && <div className="graph-hover-summary" aria-hidden="true"><small>{n.kind === 'root' ? '主线节点' : '子讨论'} · 点击进入专注视图</small><strong>{n.title}</strong>{n.previews.slice(0, 1).map(e => <p key={e.entryId}>{e.text}</p>)}</div>}
            </div>;
@@ -450,7 +526,7 @@ export function Constellation({ app, children, references, modal, newTopic, rest
       </div>
       {allocation.crowded.length > 0 && <div className="graph-crowded" data-graph-protected><button onClick={() => setCrowdedOpen(!crowdedOpen)}>重叠区域 · {allocation.crowded.length} 个主题</button>{crowdedOpen && <div>{allocation.crowded.slice(0, 40).map(n => <button key={n.id} onClick={() => { setCrowdedOpen(false); open(n.id); }}>{n.title}</button>)}</div>}</div>}
       {expanded && <div className="graph-children-panel" data-graph-protected><strong>{nodeName(expanded)} · 既有子讨论</strong><button onClick={() => setExpanded(undefined)}>关闭子讨论列表</button><p>收起祖先时保留当前活动路径与所选主题。</p><div>{projection?.nodes.filter(n => n.parent === expanded).slice(0, 40).map(n => <button key={n.id} onClick={() => open(n.id)}>{n.title}</button>)}</div>{projection?.childNextCursor != null && <button onClick={() => setChildCursor(projection.childNextCursor!)}>下一页子讨论</button>}</div>}
-      {projection && projection.aggregate > 0 && <button className="graph-aggregate" data-graph-protected onClick={() => document.getElementById('nav-toggle')?.click()}>其余 {projection.aggregate} 个主题 · 搜索 / 分页</button>}
+      {projection && projection.aggregate > 0 && <button className="graph-aggregate" data-graph-protected onClick={() => document.getElementById('nav-toggle')?.click()}>其余 {projection.aggregate} 个主题</button>}
       <div className="graph-query" data-graph-protected><input aria-label="图中搜索主题" placeholder="查找" value={search} maxLength={120} onChange={e => { setSearch(e.target.value); setCursor(-1); }} />
         {search && <div className="graph-search-results">{drawn.filter(n => n.title.includes(search)).slice(0, 40).map(n => <button key={n.id} onClick={() => { setSearch(''); open(n.id); }}>{n.title}</button>)}</div>}
         {projection?.pathContinuation && <button onClick={() => open(projection.pathContinuation!)}>主路径已截断 · 继续上溯</button>}
@@ -464,10 +540,10 @@ export function Constellation({ app, children, references, modal, newTopic, rest
         {children}
       </div>
        {gesture && gesture.phase !== 'pressCandidate' && <div className="gesture-status" data-graph-protected role="status">
-        {gesture.phase === 'erasePreview' ? gesture.target ? `「${nodeName(gesture.target)}」松开移除，可恢复` : gesture.ambiguous ? '目标重叠，请取消后明确选择' : '划过一个主题以预览移除' : gesture.phase === 'lasso' ? '框选主题' : gesture.phase === 'connectPreview' ? '松开后确认关系类型' : '拖动中'}
-        <button onPointerDown={e => e.stopPropagation()} onClick={cancel}>取消操作</button>
+        {gesture.phase === 'erasePreview' ? gesture.target ? `松开移除「${nodeName(gesture.target)}」（可恢复）` : gesture.ambiguous ? '目标重叠，请明确选择' : '划过主题预览移除' : gesture.phase === 'lasso' ? '框选主题' : gesture.phase === 'connectPreview' ? '松开即可关联' : '移动主题'}
+        <button onPointerDown={e => e.stopPropagation()} onClick={cancel}>取消</button>
        </div>}
-       {cursorHint && <div className="graph-cursor-hint" aria-hidden="true" style={{ left: cursorHint.x + 16, top: cursorHint.y + 16 }}><span>拖到另一主题即可关联</span><strong>{cursorHint.title}</strong></div>}
+       {cursorHint && <div className="graph-cursor-hint" aria-hidden="true" style={{ left: cursorHint.x + 16, top: cursorHint.y + 16 }}>{gesture?.phase === 'connectPreview' && <span>松开即可关联</span>}<strong>{cursorHint.title}</strong></div>}
       <svg className="gesture-overlay" width="100%" height="100%">
         {selectionBox && <rect x={selectionBox.left} y={selectionBox.top} width={selectionBox.right - selectionBox.left} height={selectionBox.bottom - selectionBox.top} />}
         {gesture?.phase === 'erasePreview' && <polyline className="erase-path" points={gesture.path.map(p => `${p.x},${p.y}`).join(' ')} />}

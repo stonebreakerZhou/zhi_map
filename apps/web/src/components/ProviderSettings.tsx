@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { api, type AiConfig } from '../api.js';
 import { ConfirmDialog } from './Dialog.js';
+import { brandColor, ProviderIcon } from './ProviderIcon.js';
 import { Button, InputField } from './UI.js';
 
 const presets = [
@@ -46,7 +47,7 @@ export function ProviderSettings({ state, changed }: { state: (dirty: boolean, b
   return <section className="settings-section settings-page"><div className="settings-page-head"><p className="settings-eyebrow">AI</p><h3>模型服务</h3><p>先选择服务商，再配置连接和默认模型。当前版本保存一个生效连接，个人配置优先于服务器默认。</p></div><p className="config-status">{config?.configured ? `当前 · ${config.model} · ${config.source === 'user' ? '个人配置' : config.source === 'default' ? '默认免费服务' : '服务器配置'}` : '尚未配置模型'}</p>
     {failed && <Button onClick={() => void load()}>重新加载模型配置</Button>}
     <form ref={formRef} id="ai-settings" onSubmit={e => { e.preventDefault(); void save(false); }}><fieldset disabled={!config || busy}>
-      <div className="provider-grid">{presets.map(p => <button type="button" key={p.id} className={`provider-card ${selectedPreset.id === p.id ? 'active' : ''}`} aria-pressed={selectedPreset.id === p.id} onClick={() => choosePreset(p.id)}><span>{p.name.slice(0, 2).toUpperCase()}</span><strong>{p.name}</strong><small>{p.kind}</small></button>)}</div>
+      <div className="provider-grid">{presets.map(p => <button type="button" key={p.id} className={`provider-card ${selectedPreset.id === p.id ? 'active' : ''}`} style={{ '--brand': brandColor(p.id) } as CSSProperties} aria-pressed={selectedPreset.id === p.id} onClick={() => choosePreset(p.id)}><ProviderIcon id={p.id} /><strong>{p.name}</strong><small>{p.kind}</small></button>)}</div>
       <label className="field">协议<select id="ai-provider" value={form.provider} onChange={e => chooseProtocol(e.target.value)}><option value="openai">OpenAI compatible</option><option value="anthropic">Anthropic Messages</option><option value="gemini">Gemini</option></select><small>切换协议保留自定义地址，清空本次输入的密钥；使用品牌预设可明确替换地址。</small></label>
       <InputField label="Base URL" id="ai-base-url" type="url" required maxLength={2048} value={form.baseUrl} onChange={e => { setKey(''); setVisible(false); field('baseUrl', e.target.value); }} />
       <label className="field">默认模型<input id="ai-model" required maxLength={200} list="provider-models" value={form.model} onChange={e => field('model', e.target.value)} /><datalist id="provider-models">{selectedPreset.models.map(model => <option key={model} value={model} />)}</datalist><small>模型列表是常用示例，可直接填写账号或本地服务实际提供的模型 ID。</small></label>

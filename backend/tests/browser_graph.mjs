@@ -17,6 +17,19 @@ export async function verifyGraph(browser, url) {
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: '探索图谱', exact: true }).click();
   await page.locator('[data-view="Overview"]').waitFor();
+  // The 更多 panel must survive the pointer crossing the gap from the toolbar into it.
+  const more = page.getByRole('button', { name: '更多', exact: true });
+  await more.click();
+  const panel = page.locator('#graph-options');
+  await panel.waitFor();
+  const moreBox = await more.boundingBox(), panelBox = await panel.boundingBox();
+  await page.mouse.move(moreBox.x + moreBox.width / 2, moreBox.y + moreBox.height / 2);
+  await page.mouse.move(moreBox.x + moreBox.width / 2, moreBox.y - 2, { steps: 4 });
+  await page.mouse.move(panelBox.x + panelBox.width / 2, panelBox.y + panelBox.height - 6, { steps: 6 });
+  await page.waitForTimeout(300);
+  assert(await panel.isVisible(), 'Crossing the gap into the graph options panel must keep it open');
+  await more.click();
+  await panel.waitFor({ state: 'detached' });
   await page.getByRole('button', { name: '聚焦当前', exact: true }).click();
   await page.locator('[data-view="Focus"]').waitFor();
   await page.locator('.graph-capsule .message').first().waitFor();
@@ -48,7 +61,9 @@ export async function verifyGraph(browser, url) {
   const focusedBox = await page.locator('.graph-capsule').boundingBox();
   const stageBox = await page.locator('.constellation').boundingBox();
   assert(Math.abs(focusedBox.width - Math.min(stageBox.width * .9, stageBox.width - 48)) <= 1);
-  assert((await page.locator('#draft').boundingBox()).width > 700);
+  const composerBox = await page.locator('#composer').boundingBox();
+  assert(Math.abs(composerBox.width - 640) <= 2, `Composer must keep the 640px reference width, got ${composerBox.width}`);
+  assert((await page.locator('#draft').boundingBox()).width > 560, 'The input must fill the composer shell');
   await page.locator('#draft').fill('IME and stable caret 😀');
   await page.locator('#draft').evaluate(el => { window.stableEditor = el; el.focus(); el.setSelectionRange(3, 3); el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); });
   const h = await page.locator('.constellation').boundingBox();
@@ -107,11 +122,62 @@ export async function verifyGraph(browser, url) {
   await page.locator('.edge-contact').waitFor({ state: 'attached' });
   assert((await api('/api/graph')).edges.some(e => e.type === 'contact'));
   await page.locator('.graph-selection').getByRole('button', { name: '清除选择', exact: true }).click();
+
+  // Edge oracle: well-formed paths, arrowheads only where directed, endpoints clear of the cards,
+  // and no two relations of a type stacking into one invisible curve.
+  const edges = await page.evaluate(() => [...document.querySelectorAll('.graph-edge')].map(group => {
+    const path = group.querySelector('path:not(.edge-hit)');
+    return { type: group.dataset.edgeType, d: path.getAttribute('d'), marker: path.getAttribute('marker-end'), hit: Boolean(group.querySelector('path.edge-hit')) };
+  }));
+  assert(edges.length > 0, 'The graph must render its relations');
+  for (const edge of edges) {
+    assert(/^M -?[\d.]+ -?[\d.]+ C /.test(edge.d), `Malformed edge path: ${edge.d}`);
+    assert(edge.hit, 'Every edge needs a hit path for pointer use');
+    assert.equal(edge.type === 'contact', !edge.marker, `${edge.type} edges must ${edge.type === 'contact' ? 'not ' : ''}carry an arrowhead`);
+  }
+  const stacked = edges.map(e => `${e.type}:${e.d}`).filter((v, i, all) => all.indexOf(v) !== i);
+  assert.equal(stacked.length, 0, `Relations must not stack invisibly: ${stacked[0]}`);
+  // The trim keeps the arrowhead outside the card it points at; a centre-to-centre line hides it.
+  const endpoints = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.graph-node-header')].map(el => el.getBoundingClientRect());
+    return [...document.querySelectorAll('.graph-edge')].map(group => {
+      const path = group.querySelector('path:not(.edge-hit)'), ctm = path.getScreenCTM(), total = path.getTotalLength();
+      const at = (length) => { const p = path.getPointAtLength(length); return { x: p.x * ctm.a + p.y * ctm.c + ctm.e, y: p.x * ctm.b + p.y * ctm.d + ctm.f }; };
+      const inside = (p) => cards.some(r => p.x > r.left && p.x < r.right && p.y > r.top && p.y < r.bottom);
+      return { type: group.dataset.edgeType, startClear: !inside(at(0)), endClear: !inside(at(total)) };
+    });
+  });
+  for (const edge of endpoints) assert(edge.endClear, `${edge.type} edge must stop short of its target card`);
+  const byType = edges.reduce((all, e) => ({ ...all, [e.type]: (all[e.type] ?? 0) + 1 }), {});
+  const projectedEdges = Number(await page.locator('.constellation').getAttribute('data-edge-count'));
+  assert(edges.length <= projectedEdges, 'Rendered relations cannot exceed the window projection');
+  assert(edges.length > 0 && projectedEdges > 0, 'This window must project relations to render');
+  console.log('GRAPH edges', { rendered: edges.length, byType, windowProjection: projectedEdges });
+
+  // Reproducible basic operation: removing the association removes its rendered edge.
+  const contactPoint = await page.evaluate(() => {
+    const group = document.querySelector('.graph-edge.edge-contact');
+    const path = group.querySelector('path.edge-hit');
+    const ctm = path.getScreenCTM(), total = path.getTotalLength();
+    for (let i = 1; i < 20; i++) {
+      const p = path.getPointAtLength(total * i / 20);
+      const x = p.x * ctm.a + p.y * ctm.c + ctm.e, y = p.x * ctm.b + p.y * ctm.d + ctm.f;
+      const hit = document.elementFromPoint(x, y);
+      if (hit && group.contains(hit)) return { x, y };
+    }
+    return null;
+  });
+  assert(contactPoint, 'A relation must be reachable by a real pointer somewhere along its path');
+  await page.mouse.click(contactPoint.x, contactPoint.y);
+  await page.getByRole('dialog', { name: '关系详情', exact: true }).waitFor();
+  await page.getByRole('button', { name: '断开联系', exact: true }).click();
+  await page.locator('.edge-contact').waitFor({ state: 'detached' });
+  assert(!(await api('/api/graph')).edges.some(e => e.type === 'contact'));
   // Stroke previews, only releasing submits; unrelated input does not consume recovery.
   const b = await nodes.first().boundingBox();
   await page.mouse.move(b.x - 30, b.y + 18); await page.mouse.down({ button: 'right' });
   await page.mouse.move(b.x + b.width / 2, b.y + 18, { steps: 8 });
-  await page.getByText(/松开移除，可恢复/).waitFor();
+  await page.getByText(/松开移除「/).waitFor();
   assert.equal((await api(`/api/branches/${ids[0]}`)).id, ids[0]);
   await page.screenshot({ path: 'test-results/graph-erase-preview.png' });
   await page.mouse.up({ button: 'right' });

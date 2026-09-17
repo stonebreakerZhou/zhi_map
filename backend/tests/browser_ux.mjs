@@ -14,6 +14,16 @@ export async function verifyUX(browser, url) {
   assert(await page.locator('#save-ai-config').isDisabled());
   await page.unroute('**/api/ai/config');
   await page.getByRole('button', { name: '重新加载模型配置' }).click();
+  // Provider cards must carry a real brand mark, not a text placeholder.
+  const providers = await page.locator('.provider-card').evaluateAll(cards => cards.map(card => ({
+    name: card.querySelector('strong')?.textContent ?? '',
+    paths: card.querySelectorAll('.provider-icon svg path').length,
+    tint: getComputedStyle(card.querySelector('.provider-icon')).color,
+  })));
+  assert.equal(providers.length, 9, 'Every provider must be offered');
+  for (const provider of providers) assert(provider.paths > 0, `${provider.name} must render a brand mark`);
+  const selected = providers.find(p => p.name === 'OpenAI');
+  assert.equal(selected.tint, 'rgb(16, 163, 127)', 'The selected provider must use its brand colour');
   await page.locator('#ai-model').fill('current-form-model');
   await page.locator('#ai-base-url').fill(`${url}/mock`);
   await page.locator('#ai-key').fill('test-secret');
@@ -133,7 +143,18 @@ export async function verifyUX(browser, url) {
   assert(menuBox.x >= 0 && menuBox.y >= 0 && menuBox.x + menuBox.width <= viewport.width && menuBox.y + menuBox.height <= viewport.height, 'Account drawer must stay inside the viewport');
   assert(menuBox.y + menuBox.height <= accountBox.y + 1, 'Account drawer must open upward');
   await page.screenshot({ path: 'test-results/ux-account-drawer-desktop.png' });
+  // Moving up from the trigger into the menu must not dismiss it, gap included.
+  await page.mouse.move(accountBox.x + accountBox.width / 2, accountBox.y + accountBox.height / 2);
+  await page.mouse.move(accountBox.x + accountBox.width / 2, accountBox.y - 2, { steps: 4 });
+  await page.mouse.move(menuBox.x + menuBox.width / 2, menuBox.y + menuBox.height - 4, { steps: 6 });
+  await page.waitForTimeout(300);
+  assert(await menu.isVisible(), 'Travelling from the trigger into the account menu must keep it open');
   await page.locator('.chat').hover();
+  await page.waitForFunction(() => document.querySelector('#conversation-actions-button')?.getAttribute('aria-expanded') === 'false');
+  // Clicking outside also dismisses it.
+  await account.click();
+  await menu.waitFor();
+  await page.locator('.chat').click();
   await page.waitForFunction(() => document.querySelector('#conversation-actions-button')?.getAttribute('aria-expanded') === 'false');
 
   // Real pointer and keyboard selections, with viewport geometry assertions.
