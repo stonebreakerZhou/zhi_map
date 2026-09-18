@@ -11,7 +11,7 @@ import { ReferencesDialog } from './ReferencesDialog.js';
 import { TopicSettings } from './TopicSettings.js';
 import { Dialog, ConfirmDialog } from './Dialog.js';
 import { AuthModal } from './AuthModal.js';
-import { Constellation } from '../graph/Constellation.js';
+import { Constellation } from '../graph/TreeGraph.js';
 import { SettingsCenter } from './SettingsCenter.js';
 import { TutorialOverlay } from './TutorialOverlay.js';
 import { Recovery } from '../graph/Recovery.js';
@@ -77,8 +77,12 @@ export function AppShell() {
   return <div className={`graph-workspace mode-${mode} ${nav ? 'nav-open' : ''}`} data-cache-pages={app.cache.size} data-cache-entries={app.cache.entryCount}>
     <a className="skip" href="#draft">跳到输入框</a><TopicNavigator app={app} navigated={navigated} accountLabel={authState.name ?? authState.email ?? '访客'} settings={() => { setNav(false); setModal('settings'); }} account={() => { setNav(false); setModal('auth'); }} logout={authState.isLoggedIn ? () => setLogoutConfirm(true) : undefined} references={() => setModal('references')} context={() => setModal('context')} manageCurrent={() => setModal('topic')} />
     {nav && <button className="nav-backdrop" aria-label="收起主题导航" onClick={() => { setNav(false); document.getElementById('nav-toggle')?.focus(); }} />}
-     <main className="workspace"><header className="topbar"><button id="nav-toggle" aria-expanded={nav} onClick={() => setNav(!nav)}>菜单</button><div className="conversation-heading"><strong>{branch?.title ?? '知树'}</strong></div><div className="top-actions"><button className="mode-toggle" disabled={!branch} onClick={() => setMode(mode === 'chat' ? 'graph' : 'chat')}>{mode === 'chat' ? '探索图谱' : '返回对话'}</button></div></header>
-       {mode === 'graph' ? <Constellation app={app} restoreReading={setJump} modal={Boolean(modal || selection)} references={source => { setReferenceSource(source); setModal('references'); }} newTopic={() => void newTopic()}>{conversation}</Constellation> : <div className="conversation-stage">{conversation}</div>}
+     <main className="workspace"><header className="topbar"><button id="nav-toggle" aria-expanded={nav} onClick={() => setNav(!nav)}>菜单</button><div className="conversation-heading"><strong>{branch?.title ?? '知树'}</strong></div><div className="top-actions">{mode === 'graph'
+            ? <button className="primary" onClick={() => { setMode('chat'); requestAnimationFrame(() => document.getElementById('draft')?.focus()); }}>返回对话</button>
+            : <button className="mode-toggle" disabled={!branch} onClick={() => setMode('graph')}>探索图谱</button>}</div></header>
+       {mode === 'graph'
+         ? <Constellation app={app} references={source => { setReferenceSource(source); setModal('references'); }} openConversation={() => { setMode('chat'); requestAnimationFrame(() => document.getElementById('draft')?.focus()); }} />
+         : <div className="conversation-stage">{conversation}</div>}
      </main><div id="notice" role="status">{app.notice && <>{app.notice}<button aria-label="关闭提示" onClick={() => { app.notice = ''; app.changed(); }}>关闭</button></>}</div>{app.undoToken && <div id="undo-bar">已删除主题 · 下一次修改前可撤销（最长 10 分钟）<button id="undo" disabled={app.undoBusy} onClick={() => void app.undo().catch(app.report)}>撤销</button></div>}
     <div className="global-recovery"><Recovery app={app} /></div>
     {selection && branch && <SelectionDialog app={app} selection={selection} close={close} />}

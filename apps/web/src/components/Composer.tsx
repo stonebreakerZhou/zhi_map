@@ -22,7 +22,10 @@ export function Composer({ app, references }: { app: WorkspaceController; refere
       <label className="sr-only" htmlFor="draft">继续这条思路</label>
       <textarea id="draft" rows={1} maxLength={64000} placeholder="有什么可以帮你的？" value={b.draft} disabled={Boolean(b.pendingPrompt)} onChange={e => app.draft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) { e.preventDefault(); if (!b.awaiting && !b.pendingPrompt) void send().catch(app.report); } }} />
       <div className="composer-bottom">
-        <IconButton icon="plus" label="引用资料" onClick={references} />
+        <div className="composer-tools">
+          <IconButton icon="plus" label="引用资料" onClick={references} />
+          <span className="composer-hint" aria-hidden="true">Ctrl / ⌘ + Enter 发送</span>
+        </div>
         {app.running()
           ? <IconButton className="composer-send composer-stop" data-cancel icon="stop" label="停止生成" onClick={() => app.cancel()} />
           : <IconButton id="send" className="composer-send" type="submit" icon="send" label="发送（Ctrl / Cmd + Enter）" disabled={!sendable} />}

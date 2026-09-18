@@ -3,24 +3,51 @@ import type { Entry, Selection } from '../types.js';
 import type { WorkspaceController } from '../controller.js';
 import { renderMarkdown } from '../render.js';
 import { readSelection, restoreSelection } from '../selection.js';
-import { Pager } from './Dialog.js';
+import { ConfirmDialog, Pager } from './Dialog.js';
 import { Button, Icon, IconButton } from './UI.js';
 
 export type Jump = { branchId: string; entryId: string; start: number; end: number };
 
-function Message({ entry, app, jump, locate, select }: { entry: Entry; app: WorkspaceController; jump?: Jump; locate: (j: Jump) => void; select: (s: Selection) => void }) {
-  const [raw, setRaw] = useState(false); const ref = useRef<HTMLDivElement>(null);
+/**
+ * One message row. The transcript stays flat and quiet: the assistant reads as prose on the
+ * page background, while only the user turn carries a compact bubble so the two voices are
+ * distinguishable without either one dominating the reading column.
+ */
+function Message({ entry, app, jump, locate, select, last, onNotice }: {
+  entry: Entry; app: WorkspaceController; jump?: Jump; locate: (j: Jump) => void; select: (s: Selection) => void;
+  last: boolean; onNotice: (text: string) => void;
+}) {
+  const [raw, setRaw] = useState(false), [copied, setCopied] = useState(false), [remove, setRemove] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const removable = Boolean(app.branch && !entry.inherited);
   useEffect(() => { if (jump?.entryId === entry.id) setRaw(true); }, [jump, entry.id]);
   useEffect(() => { if (raw && jump?.entryId === entry.id && ref.current) { restoreSelection(ref.current, jump.start, jump.end); ref.current.scrollIntoView({ block: 'center' }); } }, [raw, jump, entry.id]);
+  useEffect(() => { if (!copied) return; const timer = window.setTimeout(() => setCopied(false), 1600); return () => clearTimeout(timer); }, [copied]);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(entry.text); setCopied(true); }
+    catch { onNotice('复制失败，请使用系统复制菜单或 Ctrl / Cmd + C。'); }
+  };
+  const pending = Boolean(app.branch?.awaiting) && last && entry.role === 'user';
   return <article className={entry.kind === 'reference' ? 'reference' : `message ${entry.role}`} data-entry={entry.id} data-kind={entry.kind}>
     <header>{entry.kind === 'reference' ? '引用快照' : entry.role === 'user' ? '你' : '知树'}{entry.inherited && ' · 继承背景'}{entry.simulated && ' · 人工示例'}</header>
     <div ref={ref} className="message-text" data-source={entry.text} dangerouslySetInnerHTML={{ __html: raw ? `<span data-source-start="0">${entry.text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)}</span>` : renderMarkdown(entry.text) }} />
     <div className="message-actions" role="group" aria-label="消息操作">
+      <IconButton data-copy icon={copied ? 'check' : 'copy'} label={copied ? '已复制' : '复制这条消息'} onClick={() => void copy()} />
       <IconButton icon="source" label={raw ? '返回排版阅读' : '选择原文'} aria-pressed={raw} onClick={() => setRaw(!raw)} />
-      {entry.kind === 'message' && <IconButton data-fork icon="branch" label="展开讨论" disabled={!entry.text.trim()} onClick={() => select({ entryId: entry.id, start: 0, end: entry.text.length, text: entry.text })} />}
+      {entry.kind === 'message' && <IconButton data-fork icon="branch" label="从这里展开讨论" disabled={!entry.text.trim()} onClick={() => select({ entryId: entry.id, start: 0, end: entry.text.length, text: entry.text })} />}
+      {pending && <IconButton data-retry-answer icon="refresh" label="重新生成这条回答" disabled={app.running()} onClick={() => void app.ask().catch(app.report)} />}
+      {pending && <IconButton data-edit-question icon="edit" label="把问题退回草稿重新编辑" onClick={() => void app.action({ type: 'retryToDraft', branchId: app.branch!.id }).catch(app.report)} />}
       {(entry.kind === 'reference' || entry.inherited) && <IconButton data-jump icon="jump" label="返回原文" onClick={() => locate({ branchId: entry.source.branchId, entryId: entry.source.messageId, start: entry.range?.start ?? 0, end: entry.range?.end ?? entry.text.length })} />}
-      {entry.kind === 'reference' && <IconButton className="danger" icon="trash" label="移除引用" onClick={() => void app.action({ type: 'removeReference', branchId: app.branch!.id, entryId: entry.id }).catch(app.report)} />}
+      {removable && <IconButton data-remove className="danger" icon="trash" label={entry.kind === 'reference' ? '移除引用' : '移除整条讨论'} onClick={() => setRemove(true)} />}
     </div>
+    {remove && <ConfirmDialog
+      title={entry.kind === 'reference' ? '移除这条引用？' : '移除整条讨论？'}
+      label={entry.kind === 'reference' ? '移除引用' : '移除讨论'}
+      close={() => setRemove(false)}
+      confirm={entry.kind === 'reference'
+        ? async () => { await app.action({ type: 'removeReference', branchId: app.branch!.id, entryId: entry.id }); }
+        : async () => { await app.remove([app.branch!.id]); }}
+    ><p>{entry.kind === 'reference' ? '只从当前讨论的引用中移除这条快照，原始主题不受影响。' : '这条消息属于当前讨论；移除会收起整个讨论、消息与已保存草稿，独立子分支保留。十分钟内可从恢复入口还原。'}</p></ConfirmDialog>}
   </article>;
 }
 
@@ -29,6 +56,8 @@ export function MessageViewport({ app, select, jump, locate }: { app: WorkspaceC
   const container = useRef<HTMLDivElement>(null), toolbar = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0 }), [hint, setHint] = useState(''), [copied, setCopied] = useState(false);
   const suppressed = useRef(false);
+  const items = app.page.items;
+  const lastUser = items.reduce((at, entry, index) => (entry.kind === 'message' && entry.role === 'user' ? index : at), -1);
   useEffect(() => { if (!hint) return; const timer = window.setTimeout(() => setHint(''), 4000); return () => clearTimeout(timer); }, [hint]);
   useEffect(() => {
     let timer = 0;
@@ -54,7 +83,7 @@ export function MessageViewport({ app, select, jump, locate }: { app: WorkspaceC
   }, []);
   useEffect(() => setPicked(undefined), [app.branch?.id, app.page]);
   return <div id="messages" ref={container}>
-    {app.page.items.map(entry => <Message key={entry.id} entry={entry} app={app} jump={jump} locate={locate} select={select} />)}
+    {items.map((entry, index) => <Message key={entry.id} entry={entry} app={app} jump={jump} locate={locate} select={select} last={index === lastUser} onNotice={setHint} />)}
     {((app.page.cursor ?? -1) >= 0 || app.page.nextCursor !== null) && <Pager cursor={app.page.cursor ?? -1} next={app.page.nextCursor} change={cursor => void app.navigate(cursor).catch(app.report)} />}
     {picked && <div ref={toolbar} className="selection-toolbar" role="toolbar" aria-label="选区操作" style={position} onPointerDown={e => e.preventDefault()}><Button id="expand-selection" className="primary" onClick={() => { select(picked); setPicked(undefined); }}><Icon name="expand" />展开讨论</Button><IconButton icon={copied ? 'check' : 'copy'} label="复制选中文字" onClick={async () => { try { await navigator.clipboard.writeText(picked.text); setHint('已复制选中文字'); setCopied(true); window.setTimeout(() => setCopied(false), 2000); } catch { setHint('复制失败，请使用系统复制菜单或 Ctrl / Cmd + C。'); } }} /></div>}
     {hint && <p className="selection-feedback" role="status">{hint}</p>}

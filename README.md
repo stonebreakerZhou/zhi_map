@@ -9,10 +9,11 @@ Zhishu is a self-hosted learning workspace for branching a discussion from an ex
 ## Features
 
 - **Branch from an exact selection.** Select text in a message to show the nearby “Expand discussion” and “Copy” toolbar. Preview the passage, choose background up to the selection endpoint, then ask. Whole-message branching enters the same preview and never creates an empty discussion directly.
+- **A quiet transcript.** Each turn keeps a compact action row — copy, select source, branch from here, regenerate while an answer is still pending, and remove the discussion — revealed on hover or keyboard focus. Only your own turn is drawn as a bubble, sized to its text; answers read as plain prose on the page background.
 - **Organize and recover topics.** Create, search by title or tag, rename, favorite and remove. Removal uses an independent ten-minute server receipt; unrelated drafts and answers do not invalidate recovery. Deleting a session mainline is a separate, irreversible confirmation.
 - **Connect and return.** Add reference snapshots from another topic, then jump back to the original passage at any time. Topics and messages load in pages, never as a full workspace.
 - **Read typeset answers.** Replies render Markdown with KaTeX formulas — inline `$...$` or `\(...\)`, display `$$...$$` or `\[...\]` — including while streaming. A message can switch to “Select source” to select a formula as plain text.
-- **Two views.** A minimal conversation view, and an on-demand graph view for branches, relations and history.
+- **Two views.** A minimal conversation view, and an on-demand graph view that frames the current topic with its children. A topic that is not opened is a small card showing its title and excerpt; opening it is what expands the reading capsule with its transcript and composer.
 
 ## Quick Start
 
@@ -69,7 +70,7 @@ Both bundle Python and every dependency. Data always lives in `%LOCALAPPDATA%\Zh
 
 ## Status
 
-The graph view is functional but not complete: the initial layout is an insertion-order grid rather than a hierarchical constellation, and full subtree expansion, collision aggregation, shell morphing, camera history and native WebView2/Windows scaling verification remain open. Browser evidence is in `test-results/`; headless RAF samples are not a measured desktop 60fps claim.
+The graph view is functional but not complete: entering the overview frames the current topic and its direct children, but the underlying layout is still an insertion-order grid rather than a hierarchical constellation, and full subtree expansion, collision aggregation, shell morphing, camera history and native WebView2/Windows scaling verification remain open. Browser evidence is in `test-results/`; headless RAF samples are not a measured desktop 60fps claim.
 
 ## Test
 

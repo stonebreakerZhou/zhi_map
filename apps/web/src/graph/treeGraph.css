@@ -1,0 +1,143 @@
+/* Exploration view: a left-to-right mind map drawn from the topic tree. Every card is screen-space,
+   so a corner of the canvas always shows text at its own font size; only the scene offset moves.
+   Graph mode drops the sidebar and the reading column, matching the reference's full-bleed canvas. */
+
+.mode-graph .sidebar { display: none; }
+.mode-graph .workspace { margin-left: 0; }
+
+.tree-graph {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--graph-paper);
+  background-image: radial-gradient(circle at 42% 50%, color-mix(in srgb, var(--graph-card) 26%, transparent) 0, transparent 62%);
+  touch-action: none;
+  cursor: grab;
+}
+.tree-graph:active { cursor: grabbing; }
+.tree-scene { position: absolute; inset: 0; will-change: transform; }
+.tree-edges { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.tree-edge { fill: none; stroke: var(--graph-card-line); stroke-width: 1.4px; stroke-linecap: round; pointer-events: stroke; cursor: pointer; transition: opacity var(--dur-2) var(--ease-out); }
+.tree-edge.ghost { opacity: .3; }
+.tree-edge.on-path { stroke: color-mix(in srgb, var(--graph-card-line) 88%, var(--graph-ink)); }
+.tree-edge.edge-reference { stroke: var(--graph-ink); stroke-dasharray: 5 4; }
+.tree-edge.edge-contact { stroke-dasharray: 2 5; }
+.tree-edge:hover { stroke-width: 2px; stroke: var(--graph-ink); }
+
+/* Cards: origin is the left-top corner, so the layout coordinates are the card's box origin. */
+.tree-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 14px;
+  border: 1px solid var(--graph-card-line);
+  border-radius: 10px;
+  background: var(--graph-card);
+  color: var(--graph-card-text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(24, 28, 26, .04), 0 6px 16px rgba(24, 28, 26, .05);
+  transition: opacity var(--dur-2) var(--ease-out), border-color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out);
+}
+.tree-card.tier-root { width: 260px; padding: 11px 14px; border-radius: 12px; }
+.tree-card.tier-full { width: 180px; }
+.tree-card.tier-compact { width: 156px; padding: 7px 12px; }
+.tree-card.tier-chip { width: 128px; max-width: 128px; padding: 6px 12px; border-radius: 999px; flex-direction: row; align-items: center; gap: 7px; }
+
+.tree-status { width: 7px; height: 7px; border-radius: 2px; background: var(--graph-ink); flex: 0 0 auto; }
+.tree-status.root { background: var(--coral); }
+.tree-status.reference { background: #4f7fc4; }
+.tier-compact .tree-status, .tier-chip .tree-status { width: 6px; height: 6px; border-radius: 50%; }
+
+.tree-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: var(--graph-serif);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+.tier-root .tree-title { font-size: 17px; line-height: 24px; }
+.tier-compact .tree-title, .tier-chip .tree-title { -webkit-line-clamp: 1; font-size: 13px; line-height: 19px; font-weight: 500; white-space: nowrap; }
+.tree-excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--graph-card-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* The focused card carries the app's ink outline and selection tint; off-path cards recede. */
+.tree-card.focused { border-color: var(--graph-ink); border-width: 2px; background: var(--graph-card-strong); box-shadow: 0 2px 4px rgba(24, 28, 26, .06), 0 12px 26px rgba(24, 28, 26, .1); }
+.tree-card.on-path { background: var(--graph-card); }
+.tree-card.ghost { opacity: .45; filter: blur(.4px); }
+.tree-card.ghost:hover { opacity: .92; filter: none; }
+.tree-card.hovered { border-color: var(--graph-ink); background: var(--accent-soft); }
+
+/* The expand handle rides the card's right mid-edge, where its edges leave. */
+.tree-handle {
+  position: absolute;
+  top: 50%;
+  right: -11px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--graph-card-line);
+  border-radius: 50%;
+  background: var(--graph-card-soft);
+  color: var(--graph-card-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.tree-card:hover .tree-handle, .tree-card:focus-within .tree-handle, .tree-handle:focus-visible, .tree-card.focused .tree-handle { opacity: 1; }
+.tree-handle:hover { color: var(--graph-ink); border-color: var(--graph-ink); }
+
+.tree-note { position: absolute; left: 16px; bottom: 16px; padding: 8px 12px; border: 1px solid var(--graph-card-line); border-radius: 10px; background: var(--graph-card); color: var(--graph-card-muted); font-size: var(--text-caption); }
+.tree-note.error { color: var(--danger-text); border-color: var(--danger-border); }
+
+/* The reference keeps a dark status pill docked at the bottom of the canvas. */
+.tree-working {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  font-size: var(--text-caption);
+  box-shadow: 0 10px 26px rgba(20, 16, 8, .24);
+  animation: tree-working-in var(--dur-2) var(--ease-out);
+}
+.tree-working button { min-height: 24px; padding: 2px 10px; border-radius: 999px; border-color: transparent; background: var(--hover); color: inherit; font-size: var(--text-caption); }
+.tree-working button:hover { background: color-mix(in srgb, var(--toast-text) 18%, transparent); border-color: transparent; }
+.tree-spinner { width: 12px; height: 12px; border: 2px solid color-mix(in srgb, var(--toast-text) 30%, transparent); border-top-color: var(--toast-text); border-radius: 50%; animation: tree-spin 900ms linear infinite; }
+@keyframes tree-spin { to { transform: rotate(360deg); } }
+@keyframes tree-working-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+@media (max-width: 700px) {
+  .tree-card.tier-root { width: 240px; }
+  .tree-card.tier-full { width: 200px; }
+  .tree-card.tier-compact { width: 168px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tree-card, .tree-edge { transition: none; }
+  .tree-working, .tree-spinner { animation: none; }
+}
