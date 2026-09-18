@@ -52,8 +52,10 @@ def anthropic(request):
         body["system"] = system
     if request.temperature is not None:
         body["temperature"] = request.temperature
+    # 官方 SDK 风格的 base URL 不含 /v1（如 https://api.deepseek.com/anthropic）。
+    path = "/messages" if request.base_url.rstrip("/").endswith("/v1") else "/v1/messages"
     return (
-        "/messages",
+        path,
         {"x-api-key": request.key, "anthropic-version": "2023-06-01"},
         body,
     )
@@ -84,6 +86,8 @@ def gemini(request):
 
 
 ADAPTERS = {"openai": openai, "anthropic": anthropic, "gemini": gemini}
+KEY_INVALID = "模型密钥无效或已失效，请重新配置。"
+STATUS_ERRORS = {401: KEY_INVALID, 403: KEY_INVALID, 429: "模型请求限流。"}
 MAX_LINE = 256 * 1024
 MAX_EVENT = 512 * 1024
 MAX_RESPONSE = 8 * 1024 * 1024
@@ -259,9 +263,7 @@ async def _events(request: ChatRequest, *, run_id=None, transport=None):
             ) as response:
                 if response.status_code != 200:
                     raise GatewayError(
-                        "模型请求限流。"
-                        if response.status_code == 429
-                        else "模型服务暂不可用。"
+                        STATUS_ERRORS.get(response.status_code, "模型服务暂不可用。")
                     )
                 if "text/event-stream" not in response.headers.get("content-type", ""):
                     raise GatewayError("模型未返回 SSE 流。")

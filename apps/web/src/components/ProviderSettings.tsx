@@ -8,7 +8,8 @@ const presets = [
   { id: 'openai', name: 'OpenAI', protocol: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', models: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'], kind: '云端' },
   { id: 'anthropic', name: 'Anthropic', protocol: 'anthropic', url: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', models: ['claude-sonnet-4-5', 'claude-haiku-4-5'], kind: '云端' },
   { id: 'gemini', name: 'Google Gemini', protocol: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash', models: ['gemini-2.5-flash', 'gemini-2.5-pro'], kind: '云端' },
-  { id: 'deepseek', name: 'DeepSeek', protocol: 'openai', url: 'https://api.deepseek.com/v1', model: 'deepseek-chat', models: ['deepseek-chat', 'deepseek-reasoner'], kind: '兼容' },
+  { id: 'deepseek', name: 'DeepSeek', protocol: 'openai', url: 'https://api.deepseek.com', model: 'deepseek-flash', models: ['deepseek-flash', 'deepseek-v4-pro'], kind: '兼容' },
+  { id: 'deepseek-anthropic', name: 'DeepSeek（Anthropic）', protocol: 'anthropic', url: 'https://api.deepseek.com/anthropic', model: 'deepseek-flash', models: ['deepseek-flash', 'deepseek-v4-pro'], kind: '兼容' },
   { id: 'qwen', name: '阿里云百炼', protocol: 'openai', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', models: ['qwen-plus', 'qwen-max', 'qwen-turbo'], kind: '兼容' },
   { id: 'openrouter', name: 'OpenRouter', protocol: 'openai', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4.1-mini', models: ['openai/gpt-4.1-mini', 'anthropic/claude-sonnet-4.5'], kind: '聚合' },
   { id: 'ollama', name: 'Ollama', protocol: 'openai', url: 'http://127.0.0.1:11434/v1', model: 'qwen3:8b', models: ['qwen3:8b', 'llama3.2', 'deepseek-r1:8b'], kind: '本地' },
@@ -16,6 +17,7 @@ const presets = [
   { id: 'custom', name: '自定义服务商', protocol: 'openai', url: 'https://example.com/v1', model: '', models: [], kind: '自定义' },
 ];
 const defaults = { provider: 'openai', baseUrl: presets[0].url, model: '', timeoutMs: '60000', maxTokens: '4096', temperature: '' };
+const hostOf = (value: string) => { try { return new URL(value).hostname; } catch { return ''; } };
 export function ProviderSettings({ state, changed }: { state: (dirty: boolean, busy: boolean) => void; changed: (c: AiConfig) => void }) {
   const [form, setForm] = useState(defaults), [saved, setSaved] = useState(defaults), [config, setConfig] = useState<AiConfig>();
   const [key, setKey] = useState(''), [visible, setVisible] = useState(false), [feedback, setFeedback] = useState(''), [busy, setBusy] = useState(false), [failed, setFailed] = useState(false), [clear, setClear] = useState(false);
@@ -31,7 +33,7 @@ export function ProviderSettings({ state, changed }: { state: (dirty: boolean, b
   useEffect(() => { live.current = true; let active = true; void load(() => active); return () => { active = false; live.current = false; guard.current = false; }; }, []);
   const field = (name: keyof typeof form, value: string) => setForm(f => ({ ...f, [name]: value }));
   const choosePreset = (id: string) => { const p = presets.find(item => item.id === id); if (!p) return; setKey(''); setVisible(false); setForm(f => ({ ...f, provider: p.protocol, baseUrl: p.url, model: p.model })); };
-  const chooseProtocol = (provider: string) => { setKey(''); setVisible(false); setForm(f => ({ ...f, provider, baseUrl: presets.some(p => p.url === f.baseUrl) ? presets.find(p => p.protocol === provider)!.url : f.baseUrl })); };
+  const chooseProtocol = (provider: string) => { setKey(''); setVisible(false); setForm(f => { const p = presets.find(item => item.protocol === provider && hostOf(item.url) === hostOf(f.baseUrl)) ?? presets.find(item => item.protocol === provider)!; return { ...f, provider, baseUrl: presets.some(item => item.url === f.baseUrl) ? p.url : f.baseUrl }; }); };
   const save = async (test: boolean) => {
     if (guard.current || !formRef.current?.reportValidity()) return;
     if (!form.model.trim() || (needKey && !key.trim()) || (key && !key.trim())) { setFeedback('请填写有效模型名称和 API key，不能只有空白。'); return; }

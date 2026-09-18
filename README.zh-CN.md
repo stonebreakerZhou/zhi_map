@@ -53,7 +53,7 @@ py -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
 预设模型名只是填写示例，不是实时可用模型列表。**“保存并测试”会先保存表单，再发送简短请求**，并区分保存失败与连接失败。修改协议或地址需要提供对应连接的密钥。清除个人配置需要确认，清除后回退到服务器默认配置（若有）。
 
-DeepSeek、Qwen、OpenRouter 是 OpenAI 协议地址预设，未逐家验证。测试使用不同协议的本地模拟服务，尚未用真实厂商账号验证。密钥只提交给同源 API，不包含在读取接口和导出文件中。
+DeepSeek、Qwen、OpenRouter 是地址预设，其中 DeepSeek 同时提供 OpenAI 与 Anthropic 协议两个预设，均未逐家验证。测试使用不同协议的本地模拟服务，尚未用真实厂商账号验证。密钥只提交给同源 API，不包含在读取接口和导出文件中。
 
 生产环境若要保存会话模型凭据，必须设置 `DATA_ENCRYPTION_KEY`（32 字节密钥的 base64，可用 `npm run keys:generate` 生成）。开发环境未设置时会生成只在当前进程有效的临时密钥，重启后已保存凭据无法读取。`AI_ALLOWED_HOSTS` 可限制可配置的模型服务主机名。
 

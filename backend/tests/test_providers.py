@@ -116,6 +116,59 @@ def test_real_protocol_shapes_fragmented_utf8(provider, frames, path, header):
 
 
 @pytest.mark.parametrize(
+    "base,path",
+    [
+        ("https://api.anthropic.com", "/v1/messages"),
+        ("https://api.anthropic.com/v1", "/v1/messages"),
+        ("https://api.deepseek.com/anthropic", "/anthropic/v1/messages"),
+    ],
+)
+def test_anthropic_base_accepts_sdk_and_versioned_forms(base, path):
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=Chunks(wire({"type": "message_stop"})),
+        )
+
+    async def run():
+        return [
+            e
+            async for e in events(
+                ChatRequest(base, "deepseek-flash", "secret", [], provider="anthropic"),
+                transport=httpx.MockTransport(handler),
+            )
+        ]
+
+    result = asyncio.run(run())
+    assert seen == [path] and result[-1]["type"] == "completed"
+
+
+def test_rejected_key_is_reported_as_a_key_problem():
+    async def run():
+        transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                401,
+                headers={"content-type": "application/json"},
+                stream=Chunks(b'{"error":{"message":"Authentication Fails"}}'),
+            )
+        )
+        return [
+            e
+            async for e in events(
+                ChatRequest("https://api.deepseek.com", "deepseek-flash", "secret", []),
+                transport=transport,
+            )
+        ]
+
+    result = asyncio.run(run())
+    assert result[-1]["type"] == "failed" and "密钥" in result[-1]["error"]
+
+
+@pytest.mark.parametrize(
     "content,status",
     [
         (wire({"error": {"message": "secret"}}), 200),

@@ -53,7 +53,7 @@ Either set `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, `AI_PROVIDER` (`openai`, `an
 
 Preset model names are examples, not a live availability list. **Save and test** saves the form before making a short request and distinguishes save failures from connection failures. Changing the protocol or endpoint requires a key for that connection. Clearing personal configuration requires confirmation and restores the server fallback if one exists.
 
-DeepSeek, Qwen and OpenRouter are OpenAI-compatible URL presets, not separately verified integrations. Tests use protocol-specific local fixtures; no real provider account has been verified. Keys are submitted only to the same-origin API and excluded from read APIs and exports.
+DeepSeek, Qwen and OpenRouter are URL presets — DeepSeek ships both an OpenAI-compatible and an Anthropic-compatible preset — not separately verified integrations. Tests use protocol-specific local fixtures; no real provider account has been verified. Keys are submitted only to the same-origin API and excluded from read APIs and exports.
 
 For production session credentials, set `DATA_ENCRYPTION_KEY` to a base64-encoded 32-byte key (`npm run keys:generate`). Without it in development the API generates an ephemeral process key, so saved credentials cannot be read after a restart. `AI_ALLOWED_HOSTS` optionally restricts provider hostnames.
 
